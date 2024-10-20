@@ -9,3 +9,11 @@ This will be an implementation of  transformers using triton,
 my plan is to start with simple neurel network and then move upwards to transformers 
 
 - I have been able to code and train a very simple MLP using triton on the Cifar10 datasets but it is kinda slow 6 seconds per epoch where was pytorch is 3 seconds per epoch now my task is too try to optimize this code and then I will push the code here 
+
+
+
+## Resources I used to learn 
+- first learn the architecture for modern gpu using any resources you find is good for you
+- Learn a bit of cuda programming - https://www.youtube.com/watch?v=nOxKexn3iBo&t=3078s ( this video help a lot)
+- For  beginners this video on triton really help  a lot - https://www.youtube.com/watch?v=GHQ1M3VDOmU&list=PLSXcJOyFhmS-qb_CF-GLhkWxSmi-ftbPO
+- This github repo provides puzzles for simple operations to simple flash attention to matrix multiplication - https://github.com/srush/Triton-Puzzles
