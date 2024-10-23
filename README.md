@@ -12,7 +12,7 @@ my plan is to start with simple neurel network and then move upwards to transfor
 
 # Comparison between pytorch and triton 
 
-![image](src/images/epoch_time_comparison.png)
+![image](utils/images/epoch_time_comparison.png)
 
 - It seems that the training time is more or less the same pretty cool 
   
