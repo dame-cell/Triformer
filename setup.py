@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="triformer",
-    version="0.1.1",
+    version="0.0.4",
     author="DameRajee",
     author_email="doss72180@gmail.com",
     description="A Transformer implementation using Triton for GPU acceleration",

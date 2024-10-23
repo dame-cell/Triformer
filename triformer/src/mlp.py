@@ -85,9 +85,9 @@ def fused_linear_relu(X, W, Y):
     )
 
 
-class TritonLinearReLU(nn.Module):
+class TritonLinear(nn.Module):
     def __init__(self, in_features, out_features):
-        super(TritonLinearReLU, self).__init__()
+        super(TritonLinear, self).__init__()
         self.weight = nn.Parameter(torch.nn.init.kaiming_normal_(
             torch.empty(in_features, out_features, device='cuda'),
             mode='fan_in',
