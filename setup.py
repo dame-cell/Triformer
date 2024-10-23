@@ -5,15 +5,15 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="triformer",
-    version="0.0.5",
+    version="0.0.6",
     author="DameRajee",
     author_email="doss72180@gmail.com",
     description="A Transformer implementation using Triton for GPU acceleration",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/dame-cell/Triformer",
-    packages=find_packages(where="triformer/src"),
-    package_dir={"": "triformer/src"},
+    packages=find_packages(where="triformer"),
+    package_dir={"": "triformer"},
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Developers",
