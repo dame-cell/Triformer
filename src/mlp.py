@@ -70,6 +70,7 @@ def fused_linear_relu(X, W, Y):
     grid = lambda META: (
         triton.cdiv(M, META['BLOCK_SIZE_M']) * triton.cdiv(N, META['BLOCK_SIZE_N']),
     )
+
     fused_linear_relu_kernel[grid](
         X, W, Y,
         M, N, K,
@@ -79,12 +80,14 @@ def fused_linear_relu(X, W, Y):
     )
 
 
-
-
 class TritonLinearReLU(nn.Module):
     def __init__(self, in_features, out_features):
         super(TritonLinearReLU, self).__init__()
-        self.weight = nn.Parameter(torch.randn(in_features, out_features, device='cuda') * (2. / in_features) ** 0.5)
+        self.weight = nn.Parameter(torch.nn.init.kaiming_normal_(
+            torch.empty(in_features, out_features, device='cuda'),
+            mode='fan_in',
+            nonlinearity='relu'
+        ))
         self.bias = nn.Parameter(torch.zeros(out_features, device='cuda'))
 
     def forward(self, x):
