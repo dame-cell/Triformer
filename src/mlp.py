@@ -2,10 +2,8 @@ import triton
 import triton.language as tl
 import torch
 import torch.nn as nn
-import time 
-import torch.optim as optim
-from torchvision import datasets, transforms
-from torch.utils.data import DataLoader
+
+
 
 @triton.autotune(
     configs=[
@@ -54,6 +52,13 @@ def fused_linear_relu_kernel(
     
     # Apply ReLU activation
     c = tl.where(c > 0, c, 0.0)
+
+    offs_cm = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
+    offs_cn = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
+    c_ptrs = Y + stride_ym * offs_cm[:, None] + stride_yn * offs_cn[None, :]
+    c_mask = (offs_cm[:, None] < M) & (offs_cn[None, :] < N)
+    tl.store(c_ptrs, c, mask=c_mask)
+
 
     offs_cm = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
     offs_cn = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
