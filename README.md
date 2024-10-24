@@ -35,4 +35,3 @@ class TritonMLP(nn.Module):
 ## Future Plans - To Do
 - [ ] Create a library specifically for transformers in vision and language
 - [ ] Make the TritonLinear more flexible to different activation functions
-- [ ] 
