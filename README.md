@@ -9,7 +9,7 @@ This will be an implementation of  transformers using triton,
 
 # Comparison between pytorch and triton 
 
-![image](utils/images/epoch_time_comparison.png)
+![image](utils/images/training_metrics.png)
 
 - It seems that the training time is more or less the same pretty cool 
 
