@@ -30,7 +30,7 @@ class TritonMLP(nn.Module):
 ## Training Metrics for TritonMLP on the CIFAR10 Dataset
 ![image](utils/images/training_metrics2.png)
 
-- It seems that the training time is more or less the same pretty cool 
+
 
 ## Future Plans 
 - I want to create a library which is be specifically for transformers vision and language
