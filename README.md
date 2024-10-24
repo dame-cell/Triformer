@@ -11,6 +11,7 @@ This will be an implementation of  transformers using triton,
 pip install triformer==0.0.1
 ```
 - Then you can use the components 
+- please keep in mind that the TritonLinear is a fused with relu
 ```python
 from triformer import TritonLinear
 class TritonMLP(nn.Module):
@@ -31,9 +32,7 @@ class TritonMLP(nn.Module):
 ![image](utils/images/training_metrics2.png)
 
 
-
-## Future Plans 
-- I want to create a library which is be specifically for transformers vision and language
-- I will be adding each components one by one
-- It will take time 
-  
+## Future Plans - To Do
+- [ ] Create a library specifically for transformers in vision and language
+- [ ] Make the TritonLinear more flexible to different activation functions
+- [ ] 
