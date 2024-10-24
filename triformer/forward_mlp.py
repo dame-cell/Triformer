@@ -5,6 +5,16 @@ import torch.nn as nn
 from torch.autograd import Function
 import math 
 
+@triton.autotune(
+    configs=[
+        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 256, 'BLOCK_SIZE_K': 64, 'GROUP_SIZE_M': 8}, num_stages=3, num_warps=8),
+        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 256, 'BLOCK_SIZE_K': 32, 'GROUP_SIZE_M': 8}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 128, 'BLOCK_SIZE_K': 32, 'GROUP_SIZE_M': 8}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 64, 'BLOCK_SIZE_K': 32, 'GROUP_SIZE_M': 8}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 128, 'BLOCK_SIZE_K': 32, 'GROUP_SIZE_M': 8}, num_stages=4, num_warps=4),
+    ],
+    key=['M', 'N', 'K'],
+)
 @triton.jit
 def fused_linear_relu_kernel(
     X, W, Y, B,
@@ -25,16 +35,16 @@ def fused_linear_relu_kernel(
     pid_m = first_pid_m + (pid % group_size_m)
     pid_n = (pid % num_pid_in_group) // group_size_m
 
-    offs_am = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
-    offs_bn = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
+    offs_am = (pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)) % M
+    offs_bn = (pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)) % N
     offs_k = tl.arange(0, BLOCK_SIZE_K)
     a_ptrs = X + (offs_am[:, None] * stride_xm + offs_k[None, :] * stride_xk)
     b_ptrs = W + (offs_k[:, None] * stride_wk + offs_bn[None, :] * stride_wn)
 
     accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
     for k in range(0, tl.cdiv(K, BLOCK_SIZE_K)):
-        a = tl.load(a_ptrs, mask=offs_am[:, None] < M, other=0.0).to(tl.float16)
-        b = tl.load(b_ptrs, mask=offs_bn[None, :] < N, other=0.0).to(tl.float16)
+        a = tl.load(a_ptrs, mask=offs_k[None, :] < K - k * BLOCK_SIZE_K, other=0.0).to(tl.float16)
+        b = tl.load(b_ptrs, mask=offs_k[:, None] < K - k * BLOCK_SIZE_K, other=0.0).to(tl.float16)
         accumulator += tl.dot(a, b)
         a_ptrs += BLOCK_SIZE_K * stride_xk
         b_ptrs += BLOCK_SIZE_K * stride_wk
@@ -42,7 +52,7 @@ def fused_linear_relu_kernel(
     c = accumulator.to(tl.float32)
     
     # Load and add bias
-    bias = tl.load(B + offs_bn, mask=offs_bn < N, other=0.0)
+    bias = tl.load(B + offs_bn, mask=offs_bn < N, other=0.0).to(tl.float32)
     c += bias[None, :]
     
     # Apply ReLU activation
@@ -57,12 +67,13 @@ def fused_linear_relu_kernel(
     c_mask = (offs_cm[:, None] < M) & (offs_cn[None, :] < N)
     tl.store(c_ptrs, c, mask=c_mask)
 
+
 class TritonLinearFunction(Function):
     @staticmethod
     def forward(ctx, input, weight, bias):
         ctx.save_for_backward(input, weight, bias)
         M, K = input.shape
-        N, K = weight.shape  # Note: weight shape is (out_features, in_features)
+        N, K = weight.shape
 
         Y = torch.empty((M, N), device=input.device, dtype=torch.float16)
 
@@ -71,23 +82,18 @@ class TritonLinearFunction(Function):
         )
 
         fused_linear_relu_kernel[grid](
-            input, weight.t(), Y, bias,  # Transpose weight for the kernel
+            input, weight.t(), Y, bias,
             M, N, K,
             input.stride(0), input.stride(1),
-            weight.stride(1), weight.stride(0),  
+            weight.stride(1), weight.stride(0),
             Y.stride(0), Y.stride(1),
-            BLOCK_SIZE_M=32,
-            BLOCK_SIZE_N=32,
-            BLOCK_SIZE_K=64,
-            GROUP_SIZE_M=32,
         )
 
-        torch.cuda.synchronize()  
+        torch.cuda.synchronize()
 
-        if torch.isnan(Y).any() or torch.isinf(Y).any():
-            raise RuntimeError("NaN or Inf detected in the output")
+    
 
-        ctx.Y = Y  
+        ctx.Y = Y
         return Y
 
     @staticmethod

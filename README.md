@@ -7,7 +7,7 @@ This will be an implementation of  transformers using triton,
 
 
 ## Training Metrics for TritonMLP on the CIFAR10 Dataset
-![image](utils/images/training_metrics.png)
+![image](utils/images/training_metrics2.png)
 
 - It seems that the training time is more or less the same pretty cool 
 
