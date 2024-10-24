@@ -6,9 +6,7 @@ This will be an implementation of  transformers using triton,
 - As of right now I am still learning Triton 
 
 
-
-# Comparison between pytorch and triton 
-
+## Training Metrics for TritonMLP on the CIFAR10 Dataset
 ![image](utils/images/training_metrics.png)
 
 - It seems that the training time is more or less the same pretty cool 
