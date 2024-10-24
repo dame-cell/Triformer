@@ -5,6 +5,8 @@ import torch.nn as nn
 from torch.autograd import Function
 import math 
 
+print("triton_version:", triton.__version__)
+print("torch_version:", torch.__version__)
 @triton.autotune(
     configs=[
         triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 256, 'BLOCK_SIZE_K': 64, 'GROUP_SIZE_M': 8}, num_stages=3, num_warps=8),
