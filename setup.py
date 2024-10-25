@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
   name = 'triformer',
   packages = find_packages(),
-  version = '1.1.0',
+  version = '1.1.2',
   license='MIT',
   description = 'Transformer components in Triton',
   author = 'Dame rajee',
@@ -15,9 +15,9 @@ setup(
     'deep learning'
   ],
   install_requires=[
-    
+  
     'torch>=2.2.1',
-    'triton>=2.2.0'
+    'triton>=2.2.0',
   ],
   classifiers=[
     'Development Status :: 4 - Beta',
