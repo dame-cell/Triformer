@@ -37,11 +37,6 @@ You can try out the TritonMLP on CIFAR10 dataset using this Colab notebook:
 
 
 
-
-## Training Metrics for TritonMLP on the CIFAR10 Dataset
-![image](utils/images/training_metrics2.png)
-
-
 ## Future Plans - To Do
 - [ ] Create a library specifically for transformers in vision and language
 - [ ] Make the TritonLinear more flexible to different activation functions
