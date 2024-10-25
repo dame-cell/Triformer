@@ -3,7 +3,7 @@ import triton.language as tl
 import torch
 import torch.nn as nn
 from torch.autograd import Function
-import math 
+import math
 
 
 @triton.autotune(
@@ -49,13 +49,13 @@ def fused_linear_relu_kernel(
         accumulator += tl.dot(a, b)
         a_ptrs += BLOCK_SIZE_K * stride_xk
         b_ptrs += BLOCK_SIZE_K * stride_wk
-    
+
     c = accumulator.to(tl.float32)
-    
+
     # Load and add bias
     bias = tl.load(B + offs_bn, mask=offs_bn < N, other=0.0).to(tl.float32)
     c += bias[None, :]
-    
+
     # Apply ReLU activation
     c = tl.maximum(c, 0)
 
@@ -69,19 +69,183 @@ def fused_linear_relu_kernel(
     tl.store(c_ptrs, c, mask=c_mask)
 
 
+@triton.jit
+def apply_relu_grad(grad_output, Y, num_elements, BLOCK_SIZE: tl.constexpr = 1024):
+    pid = tl.program_id(0)
+    block_start = pid * BLOCK_SIZE
+    offsets = block_start + tl.arange(0, BLOCK_SIZE)
+    mask = offsets < num_elements
+
+    x = tl.load(Y + offsets, mask=mask)
+    grad = tl.load(grad_output + offsets, mask=mask)
+
+    result = tl.where(x > 0, grad, 0.0)
+    tl.store(grad_output + offsets, result, mask=mask)
+
+@triton.autotune(
+    configs=[
+        triton.Config({'BLOCK_SIZE_M': 32}),
+        triton.Config({'BLOCK_SIZE_M': 32}),
+        triton.Config({'BLOCK_SIZE_M': 32}),
+    ],
+    key=['M'],
+)
+@triton.jit
+def backward_input_kernel(
+    grad_output, weight, grad_input,
+    M, N, K,
+    stride_gom, stride_gon,
+    stride_wk, stride_wn,
+    stride_gim, stride_gik,
+    BLOCK_SIZE_M: tl.constexpr,
+
+):
+    # Compute linear indices
+    pid = tl.program_id(0)
+    num_blocks_m = tl.cdiv(M, BLOCK_SIZE_M)
+    
+    # Block indices
+    block_m = pid // K
+    block_k = pid % K
+    
+    # Initialize offsets
+    offs_m = block_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
+    mask = offs_m < M
+
+    # Initialize accumulator
+    acc = tl.zeros([BLOCK_SIZE_M], dtype=tl.float32)
+    
+    # Compute partial result
+    for n in range(N):
+        # Load grad_output
+        g_ptr = grad_output + offs_m * stride_gom + n * stride_gon
+        grad = tl.load(g_ptr, mask=mask, other=0.0)
+        
+        # Load weight
+        w_ptr = weight + n * stride_wn + block_k * stride_wk
+        w = tl.load(w_ptr)
+        
+        # Accumulate
+        acc += grad * w
+
+    # Write result
+    out_ptr = grad_input + offs_m * stride_gim + block_k * stride_gik
+    tl.store(out_ptr, acc, mask=mask)
+
+@triton.autotune(
+    configs=[
+        triton.Config({'BLOCK_SIZE_N': 32,}),
+        triton.Config({'BLOCK_SIZE_N': 32,}),
+        triton.Config({'BLOCK_SIZE_N': 32,}),
+    ],
+    key=['N'],
+)
+@triton.jit
+def backward_weight_kernel(
+    grad_output, input, grad_weight,
+    M, N, K,
+    stride_gom, stride_gon,
+    stride_im, stride_ik,
+    stride_gwn, stride_gwk,
+
+    BLOCK_SIZE_N: tl.constexpr,
+):
+    # Compute linear indices
+    pid = tl.program_id(0)
+    num_blocks_n = tl.cdiv(N, BLOCK_SIZE_N)
+    
+    # Block indices
+    block_n = pid // K
+    block_k = pid % K
+    
+    # Initialize offsets
+    offs_n = block_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
+    mask = offs_n < N
+
+    # Initialize accumulator
+    acc = tl.zeros([BLOCK_SIZE_N], dtype=tl.float32)
+    
+    # Compute partial result
+    for m in range(M):
+        # Load grad_output
+        g_ptr = grad_output + m * stride_gom + offs_n * stride_gon
+        grad = tl.load(g_ptr, mask=mask, other=0.0)
+        
+        # Load input
+        i_ptr = input + m * stride_im + block_k * stride_ik
+        inp = tl.load(i_ptr)
+        
+        # Accumulate
+        acc += grad * inp
+
+    # Write result
+    out_ptr = grad_weight + offs_n * stride_gwn + block_k * stride_gwk
+    tl.store(out_ptr, acc, mask=mask)
+
+@triton.autotune(
+    configs=[
+        triton.Config({'BLOCK_SIZE_M': 32, 'BLOCK_SIZE_N': 32}),
+        triton.Config({'BLOCK_SIZE_M': 32, 'BLOCK_SIZE_N': 32}),
+        triton.Config({'BLOCK_SIZE_M': 32, 'BLOCK_SIZE_N': 32}),
+    ],
+    key=['M', 'N'],
+)
+@triton.jit
+def fused_relu_bias_backward_kernel(
+    grad_output, Y, grad_bias,
+    M, N,
+    stride_gom, stride_gon,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_N: tl.constexpr,
+):
+    # Get program ID and compute offsets
+    pid = tl.program_id(0)
+    num_blocks_n = tl.cdiv(N, BLOCK_SIZE_N)
+    block_n = pid % num_blocks_n
+
+    offs_n = block_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
+    mask = offs_n < N
+
+    # Initialize bias accumulator
+    bias_acc = tl.zeros([BLOCK_SIZE_N], dtype=tl.float32)
+
+    # Process each row (M dimension)
+    for m in range(M):
+        # Compute pointers for current row
+        go_ptr = grad_output + m * stride_gom + offs_n * stride_gon
+        y_ptr = Y + m * stride_gom + offs_n * stride_gon
+
+        # Load values
+        grad = tl.load(go_ptr, mask=mask, other=0.0)
+        y = tl.load(y_ptr, mask=mask, other=0.0)
+
+        # Apply ReLU gradient (zero out gradients where input was negative)
+        grad = tl.where(y > 0, grad, 0.0)
+
+        # Store modified gradient back
+        tl.store(go_ptr, grad, mask=mask)
+
+        # Accumulate for bias gradient
+        bias_acc += grad
+
+    # Store bias gradients
+    tl.store(grad_bias + offs_n, bias_acc, mask=mask)
+
+
+
 class TritonLinearFunction(Function):
     @staticmethod
     def forward(ctx, input, weight, bias):
-        ctx.save_for_backward(input, weight, bias)
         M, K = input.shape
         N, K = weight.shape
 
+        # Output tensor
         Y = torch.empty((M, N), device=input.device, dtype=torch.float16)
 
+        # Run kernel
         grid = lambda META: (
             triton.cdiv(M, META['BLOCK_SIZE_M']) * triton.cdiv(N, META['BLOCK_SIZE_N']),
         )
-
         fused_linear_relu_kernel[grid](
             input, weight.t(), Y, bias,
             M, N, K,
@@ -90,44 +254,67 @@ class TritonLinearFunction(Function):
             Y.stride(0), Y.stride(1),
         )
 
-        torch.cuda.synchronize()
-
-    
-
+        ctx.save_for_backward(input, weight, bias)
         ctx.Y = Y
         return Y
 
     @staticmethod
     def backward(ctx, grad_output):
-        input, weight, _ = ctx.saved_tensors
-        Y = ctx.Y  # Retrieve saved output
-        
-        # Ensure consistent dtypes
-        grad_output = grad_output.to(torch.float32)
-        input = input.to(torch.float32)
-        weight = weight.to(torch.float32)
-        
-        # Apply ReLU gradient
-        relu_mask = (Y > 0).float()
-        grad_output = grad_output * relu_mask
-        
-        # Compute gradients using PyTorch operations
-        grad_input = grad_output.mm(weight)
-        grad_weight = grad_output.t().mm(input)
-        grad_bias = grad_output.sum(0)
-        
-        # Convert gradients back to float16
-        grad_input = grad_input.to(torch.float16)
-        grad_weight = grad_weight.to(torch.float16)
-        grad_bias = grad_bias.to(torch.float16)
-    
-        return grad_input, grad_weight, grad_bias
+        input, weight, bias = ctx.saved_tensors
+        Y = ctx.Y
+        M, K = input.shape
+        N, K = weight.shape
 
+        # Compute bias gradients and apply ReLU gradient in-place
+        grad_bias = torch.empty_like(bias)
+        grid_fused = lambda META: (
+            triton.cdiv(N, META['BLOCK_SIZE_N']),
+        )
+        fused_relu_bias_backward_kernel[grid_fused](
+            grad_output, Y, grad_bias,
+            M, N,
+            grad_output.stride(0), grad_output.stride(1),
+        )
+
+        # Compute input gradients
+        grad_input = torch.empty_like(input)
+        grid_input = lambda META: (
+            triton.cdiv(M, META['BLOCK_SIZE_M']) * K,
+        )
+        backward_input_kernel[grid_input](
+            grad_output, weight, grad_input,
+            M, N, K,
+            grad_output.stride(0), grad_output.stride(1),
+            weight.stride(1), weight.stride(0),
+            grad_input.stride(0), grad_input.stride(1),
+        )
+
+        # Compute weight gradients
+        grad_weight = torch.empty_like(weight)
+        grid_weight = lambda META: (
+            triton.cdiv(N, META['BLOCK_SIZE_N']) * K,
+        )
+        backward_weight_kernel[grid_weight](
+            grad_output, input, grad_weight,
+            M, N, K,
+            grad_output.stride(0), grad_output.stride(1),
+            input.stride(0), input.stride(1),
+            grad_weight.stride(0), grad_weight.stride(1),
+        )
+
+        return grad_input, grad_weight, grad_bias
+        
 class TritonLinear(nn.Module):
     def __init__(self, in_features, out_features):
-        super(TritonLinear, self).__init__()
-        self.weight = nn.Parameter(torch.empty(out_features, in_features, device='cuda', dtype=torch.float16))
-        self.bias = nn.Parameter(torch.zeros(out_features, device='cuda', dtype=torch.float16))
+        super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.weight = nn.Parameter(
+            torch.empty(out_features, in_features, device='cuda', dtype=torch.float16)
+        )
+        self.bias = nn.Parameter(
+            torch.zeros(out_features, device='cuda', dtype=torch.float16)
+        )
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -140,3 +327,5 @@ class TritonLinear(nn.Module):
     def forward(self, x):
         return TritonLinearFunction.apply(x, self.weight, self.bias)
 
+    def extra_repr(self) -> str:
+        return f'in_features={self.in_features}, out_features={self.out_features}'
