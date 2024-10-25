@@ -8,7 +8,7 @@ setup(
   description = 'Transformer components in Triton',
   author = 'Dame rajee',
   author_email = 'doss72180@gmail.com',
-  url = 'https://github.com/dame-cell/Triformer/tree/mainr',
+  url = 'https://github.com/dame-cell/Triformer',
   keywords = [
     'artificial intelligence',
     'transformers'
