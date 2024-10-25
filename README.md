@@ -12,6 +12,7 @@ pip install triformer==1.1.1
 ```
 - Then you can use the components 
 - please keep in mind that the TritonLinear is a fused with relu
+  
 ```python
 from triformer import TritonLinear
 class TritonMLP(nn.Module):
@@ -27,6 +28,15 @@ class TritonMLP(nn.Module):
         x = self.fc3(x)
         return x
 ```
+
+### Try it out!
+
+You can try out the TritonMLP on CIFAR10 dataset using this Colab notebook:
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1tupdi2hgIEY9zSZ9N47LmdUmbn3IE9pO?usp=sharing)
+
+
+
 
 ## Training Metrics for TritonMLP on the CIFAR10 Dataset
 ![image](utils/images/training_metrics2.png)
