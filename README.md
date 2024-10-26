@@ -8,7 +8,7 @@ This will be an implementation of  transformers using triton,
 ### Installation 
 - First install triformer 
 ```bash
-pip install triformer==1.1.1
+pip install triformer==1.2.2
 ```
 - Then you can use the components 
 - please keep in mind that the TritonLinear is a fused with relu
@@ -16,11 +16,11 @@ pip install triformer==1.1.1
 ```python
 from triformer import TritonLinear
 class TritonMLP(nn.Module):
-    def __init__(self, input_size, num_classes, hidden_size=256):
+    def __init__(self, input_size, num_classes, hidden_size=768):
         super(TritonMLP, self).__init__()
-        self.fc1 = TritonLinear(input_size, hidden_size)
-        self.fc2 = TritonLinear(hidden_size, hidden_size*2)
-        self.fc3 = TritonLinear(hidden_size*2, num_classes)
+        self.fc1 = TritonLinear(input_size, hidden_size,use_relu=True)
+        self.fc2 = TritonLinear(hidden_size, hidden_size*2,use_relu=True)
+        self.fc3 = TritonLinear(hidden_size*2, num_classes,use_relu=False)
 
     def forward(self, x):
         x = self.fc1(x)

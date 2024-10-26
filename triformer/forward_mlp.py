@@ -270,7 +270,7 @@ class TritonLinearFunction(Function):
     def backward(ctx, grad_output):
         input, weight, bias = ctx.saved_tensors
         Y = ctx.Y
-        use_relu = ctx.use_relu  # Retrieve use_relu parameter
+        use_relu = ctx.use_relu
         M, K = input.shape
         N, K = weight.shape
 
@@ -316,7 +316,9 @@ class TritonLinearFunction(Function):
             grad_weight.stride(0), grad_weight.stride(1),
         )
 
-        return grad_input, grad_weight, grad_bias
+        # Return 4 gradients to match the 4 forward inputs
+        # The last None is for use_relu since it doesn't need a gradient
+        return grad_input, grad_weight, grad_bias, None
         
 class TritonLinear(nn.Module):
     def __init__(self, in_features, out_features, use_relu=True):  # Modified signature
@@ -344,3 +346,4 @@ class TritonLinear(nn.Module):
 
     def extra_repr(self) -> str:
         return f'in_features={self.in_features}, out_features={self.out_features}'
+
