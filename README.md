@@ -14,6 +14,12 @@ pip install triformer
 - please keep in mind that the TritonLinear is a fused with relu
 - As of right now the TritonLinear is very slow compared to the Pytorch Linear layer, I'm asssuming its because I divided the kernel into 3 parts and the overhead of switching between different kernels is causing the slowdown I'm still looking into it. I might fused the kernels to see if that helps. 
   
+- The TritonLayerNorm significantly outperforms the PyTorch LayerNorm in terms of speed:
+  - Achieves 5.48x to 7.00x speedup across various input sizes
+  - Reaches up to 182.29 GB/s throughput compared to PyTorch's 26.14 GB/s
+  - Consistently delivers 5-7x performance improvement for different N values
+![LayerNorm Benchmark](triformer/layernorm_benchmark.png)
+
 ```python
 from triformer import TritonLinear
 class TritonMLP(nn.Module):
@@ -42,4 +48,4 @@ You can try out the TritonMLP on CIFAR10 dataset using this Colab notebook:
 - [ ] Create a library specifically for transformers in vision and language
 - [ ] Make the TritonLinear more flexible to either use relu or not
 - [ ] Fuse the kernels of TritonLinear to see if it speeds up the training process 
-- [ ] Implement the TritonLayerNorm and TritonSoftmax
+
