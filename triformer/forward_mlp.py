@@ -8,7 +8,11 @@ import math
 
 @triton.autotune(
     configs=[
-        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 256, 'BLOCK_SIZE_K': 64, 'GROUP_SIZE_M': 8}, num_stages=3, num_warps=8),
+        # Add larger block sizes for bigger matrices
+        triton.Config({'BLOCK_SIZE_M': 256, 'BLOCK_SIZE_N': 256, 'BLOCK_SIZE_K': 64, 'GROUP_SIZE_M': 8}, num_stages=3, num_warps=8),
+        # Add configurations optimized for different matrix shapes
+        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 256, 'BLOCK_SIZE_K': 64, 'GROUP_SIZE_M': 16}, num_stages=3, num_warps=8),
+        # Keep existing configs for smaller matrices
         triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 256, 'BLOCK_SIZE_K': 32, 'GROUP_SIZE_M': 8}, num_stages=4, num_warps=4),
         triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 128, 'BLOCK_SIZE_K': 32, 'GROUP_SIZE_M': 8}, num_stages=4, num_warps=4),
         triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 64, 'BLOCK_SIZE_K': 32, 'GROUP_SIZE_M': 8}, num_stages=4, num_warps=4),
@@ -339,4 +343,8 @@ class TritonLinear(nn.Module):
         return TritonLinearFunction.apply(x, self.weight, self.bias, self.use_relu)
 
     def extra_repr(self) -> str:
+<<<<<<< HEAD
         return f'in_features={self.in_features}, out_features={self.out_features}, use_relu={self.use_relu}'
+=======
+        return f'in_features={self.in_features}, out_features={self.out_features}'
+>>>>>>> 2431a55354b7b76e1a73b2b45004d89dce7dae8e
