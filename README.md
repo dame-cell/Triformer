@@ -13,17 +13,7 @@ pip install triformer
 - Then you can use the components 
 - please keep in mind that the TritonLinear is a fused with relu
 - As of right now the TritonLinear is very slow compared to the Pytorch Linear layer, I'm asssuming its because I divided the kernel into 3 parts and the overhead of switching between different kernels is causing the slowdown I'm still looking into it. I might fused the kernels to see if that helps. 
-  
-- The TritonLayerNorm performance compared to PyTorch LayerNorm varies based on input size:
-  - For smaller sizes (1024, 1536), Triton outperforms PyTorch by 1.22x and 1.17x respectively
-  - For medium sizes (2048, 2560), PyTorch is faster by 0.86x and 0.91x
-  - At 3072, performance is equal
-  - For larger size (3584), Triton regains a slight edge with 1.08x speedup
-- Throughput ranges from 117 GB/s to 179 GB/s for Triton, and 96 GB/s to 184 GB/s for PyTorch
-- Performance characteristics change with input size, showing the importance of benchmarking for specific use cases
 
-`I used a custom benchmark to test the performance because the one in triton is not intutive to me to use`
-![LayerNorm Benchmark](triformer/layernorm_benchmark.png)
 
 ```python
 from triformer import TritonLinear
@@ -46,6 +36,17 @@ class TritonMLP(nn.Module):
 You can try out the TritonMLP on CIFAR10 dataset using this Colab notebook:
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1tupdi2hgIEY9zSZ9N47LmdUmbn3IE9pO?usp=sharing)
+
+
+`I used a custom benchmark to test the performance because the one in triton is not intutive to me to use`
+
+![LayerNorm Benchmark](triformer/layernorm_benchmark.png)
+
+Scales well with increasing feature dimensions
+- Particularly efficient for larger hidden sizes (N≥3072)
+- Consistent performance scaling up to tested size of 3584
+- No performance degradation at larger sizes
+
 
 
 
