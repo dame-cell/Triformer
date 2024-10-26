@@ -30,7 +30,7 @@ def bmm_kernel(
     BLOCK_SIZE_N: tl.constexpr,
     BLOCK_SIZE_K: tl.constexpr,
     GROUP_SIZE_M: tl.constexpr,
-    ACTIVATION: tl.constexpr = None,
+    USE_RELU: tl.constexpr,
 ):
     pid_batch = tl.program_id(0)
     pid = tl.program_id(1)
@@ -59,8 +59,8 @@ def bmm_kernel(
         x_ptrs += BLOCK_SIZE_K * stride_ak
         y_ptrs += BLOCK_SIZE_K * stride_bk
 
-    if ACTIVATION is not None:
-        o = ACTIVATION(o)
+    if USE_RELU:
+        o = tl.maximum(o, 0.0)
 
     offs_m = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
     offs_n = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
@@ -69,7 +69,7 @@ def bmm_kernel(
     o_ptrs = o_ptr + stride_om * offs_m[:, None] + stride_on * offs_n[None, :] + stride_ol * pid_batch
     tl.store(o_ptrs, o, mask=mask)
 
-def triton_bmm(x, y, activation=None):
+def triton_bmm(x, y, use_relu=False):
     B, M, K = x.shape
 
     if y.ndim == 2:
@@ -89,13 +89,9 @@ def triton_bmm(x, y, activation=None):
         x.stride(0), x.stride(1), x.stride(2),
         y.stride(0), y.stride(1), y.stride(2),
         o.stride(0), o.stride(1), o.stride(2),
-        ACTIVATION=activation,
+        USE_RELU=use_relu,
     )
     return o
-
-@triton.jit
-def relu_activation(x):
-    return tl.maximum(x, 0)
 
 class TritonLinearFunction(Function):
     @staticmethod
@@ -108,8 +104,7 @@ class TritonLinearFunction(Function):
         weight = weight.t().contiguous()
         
         # Apply the main computation
-        activation = relu_activation if use_relu else None
-        output = triton_bmm(x, weight, activation=activation)
+        output = triton_bmm(x, weight, use_relu=use_relu)
         
         # Add bias
         if bias is not None:
