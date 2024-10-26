@@ -15,7 +15,6 @@ class LayerNorm(nn.Module):
         self.beta = nn.Parameter(torch.zeros(dim)) 
   
     def forward(self, x):
-        # Fix: self.dim is a number, not a list/tuple
         mean = x.mean(dim=-1, keepdim=True)
         var = ((x - mean) ** 2).mean(dim=-1, keepdim=True)
         std = torch.sqrt(var + self.eps)
