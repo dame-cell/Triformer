@@ -6,22 +6,7 @@ from torch.autograd import Function
 import time 
 import matplotlib.pyplot as plt
 
-class LayerNorm(nn.Module):
-    def __init__(self, dim, eps=1e-8):
-        super().__init__()
-        self.dim = dim 
-        self.eps = eps  
-        self.gamma = nn.Parameter(torch.ones(dim)) 
-        self.beta = nn.Parameter(torch.zeros(dim)) 
-  
-    def forward(self, x):
-        mean = x.mean(dim=-1, keepdim=True)
-        var = ((x - mean) ** 2).mean(dim=-1, keepdim=True)
-        std = torch.sqrt(var + self.eps)
-        y = (x - mean) / std
-        out = self.gamma * y + self.beta
-        return out 
-    
+
     
 @triton.jit
 def fwd_layernorm_kernel(
@@ -66,11 +51,11 @@ class TritonLayerNorm(Function):
     rows, cols = input.shape 
     assert input.dim() == 2, "we are working with only 2d tensor for now" 
     block_size = triton.next_power_of_2(cols)
-    num_wraps = 4 
+    num_warps = 4 
     if block_size == 2047:
-      num_wraps = 8 
+      num_warps = 8 
     if block_size == 4095:
-      num_wraps = 16 
+      num_warps = 16 
    
     sm_out = torch.empty_like(input)
     
@@ -110,7 +95,7 @@ def benchmark_layer_norm_with_plot(dtype=torch.float16, num_runs=500):
         x = -2.3 + 0.5 * torch.randn(x_shape, dtype=dtype, device='cuda')
         
         # PyTorch LayerNorm
-        torch_ln = LayerNorm(N).to('cuda').to(dtype)
+        torch_ln = torch.nn.LayerNorm(N).to('cuda').to(dtype)
         
         # Warmup
         for _ in range(10):
