@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt
 
 class LayerNorm(nn.Module):
     def __init__(self, dim, eps=1e-8):
-        # Fix: Call super().__init__() instead of super(LayerNorm).__init__()
         super().__init__()
         self.dim = dim 
         self.eps = eps  
