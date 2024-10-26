@@ -96,6 +96,9 @@ def triton_bmm(x, y, use_relu=False):
 class TritonLinearFunction(Function):
     @staticmethod
     def forward(ctx, x, weight, bias, use_relu=True):
+        # Convert input to float16 if necessary
+        x = x.to(dtype=torch.float16)
+        
         # Add batch dimension if necessary
         if x.ndim == 2:
             x = x.unsqueeze(0)
@@ -149,11 +152,12 @@ class TritonLinear(nn.Module):
         self.in_features = in_features
         self.out_features = out_features
         self.use_relu = use_relu
+        # Change weight and bias to float32
         self.weight = nn.Parameter(
-            torch.empty(out_features, in_features, device='cuda', dtype=torch.float16)
+            torch.empty(out_features, in_features, device='cuda', dtype=torch.float32)
         )
         self.bias = nn.Parameter(
-            torch.zeros(out_features, device='cuda', dtype=torch.float16)
+            torch.zeros(out_features, device='cuda', dtype=torch.float32)
         )
         self.reset_parameters()
 
