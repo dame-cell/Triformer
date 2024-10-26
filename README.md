@@ -18,7 +18,10 @@ pip install triformer
   - Achieves 5.48x to 7.00x speedup across various input sizes
   - Reaches up to 182.29 GB/s throughput compared to PyTorch's 26.14 GB/s
   - Consistently delivers 5-7x performance improvement for different N values
+
+`I used a custom benchmark to test the performance because the one in triton is not intutive to me to use`
 ![LayerNorm Benchmark](triformer/layernorm_benchmark.png)
+```
 
 ```python
 from triformer import TritonLinear
