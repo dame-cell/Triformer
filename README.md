@@ -21,7 +21,6 @@ pip install triformer
 
 `I used a custom benchmark to test the performance because the one in triton is not intutive to me to use`
 ![LayerNorm Benchmark](triformer/layernorm_benchmark.png)
-```
 
 ```python
 from triformer import TritonLinear
