@@ -42,3 +42,4 @@ You can try out the TritonMLP on CIFAR10 dataset using this Colab notebook:
 - [ ] Create a library specifically for transformers in vision and language
 - [ ] Make the TritonLinear more flexible to either use relu or not
 - [ ] Fuse the kernels of TritonLinear to see if it speeds up the training process 
+- [ ] Implement the TritonLayerNorm and TritonSoftmax

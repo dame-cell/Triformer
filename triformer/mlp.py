@@ -4,6 +4,11 @@ import torch
 import torch.nn as nn
 from torch.autograd import Function
 import math
+import torch.optim as optim
+import torchvision.transforms as transforms
+import torchvision.datasets as datasets
+from torch.utils.data import DataLoader
+import time
 
 
 @triton.autotune(
@@ -219,7 +224,6 @@ def fused_relu_bias_backward_kernel(
         grad = tl.load(go_ptr, mask=mask, other=0.0)
         y = tl.load(y_ptr, mask=mask, other=0.0)
 
-        # Apply ReLU gradient (zero out gradients where input was negative)
         grad = tl.where(y > 0, grad, 0.0)
 
         # Store modified gradient back
@@ -329,3 +333,5 @@ class TritonLinear(nn.Module):
 
     def extra_repr(self) -> str:
         return f'in_features={self.in_features}, out_features={self.out_features}'
+    
+    
