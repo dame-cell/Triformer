@@ -343,8 +343,4 @@ class TritonLinear(nn.Module):
         return TritonLinearFunction.apply(x, self.weight, self.bias, self.use_relu)
 
     def extra_repr(self) -> str:
-<<<<<<< HEAD
-        return f'in_features={self.in_features}, out_features={self.out_features}, use_relu={self.use_relu}'
-=======
         return f'in_features={self.in_features}, out_features={self.out_features}'
->>>>>>> 2431a55354b7b76e1a73b2b45004d89dce7dae8e
