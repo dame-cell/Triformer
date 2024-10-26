@@ -25,6 +25,7 @@ def fused_linear_relu_kernel(
     stride_ym, stride_yn,
     BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_N: tl.constexpr, BLOCK_SIZE_K: tl.constexpr,
     GROUP_SIZE_M: tl.constexpr,
+    use_relu: tl.constexpr,  # New parameter
 ):
     pid = tl.program_id(0)
     num_pid_m = tl.cdiv(M, BLOCK_SIZE_M)
@@ -56,8 +57,9 @@ def fused_linear_relu_kernel(
     bias = tl.load(B + offs_bn, mask=offs_bn < N, other=0.0).to(tl.float32)
     c += bias[None, :]
 
-    # Apply ReLU activation
-    c = tl.maximum(c, 0)
+    # Apply ReLU activation only if use_relu is True
+    if use_relu:
+        c = tl.maximum(c, 0)
 
     # Convert to float16 after all computations
     c = c.to(tl.float16)
@@ -235,7 +237,7 @@ def fused_relu_bias_backward_kernel(
 
 class TritonLinearFunction(Function):
     @staticmethod
-    def forward(ctx, input, weight, bias):
+    def forward(ctx, input, weight, bias, use_relu=True):  # Modified signature
         M, K = input.shape
         N, K = weight.shape
 
@@ -252,29 +254,37 @@ class TritonLinearFunction(Function):
             input.stride(0), input.stride(1),
             weight.stride(1), weight.stride(0),
             Y.stride(0), Y.stride(1),
+            use_relu=use_relu,  # Pass the use_relu parameter
         )
 
         ctx.save_for_backward(input, weight, bias)
         ctx.Y = Y
+        ctx.use_relu = use_relu  # Save for backward pass
         return Y
 
     @staticmethod
     def backward(ctx, grad_output):
         input, weight, bias = ctx.saved_tensors
         Y = ctx.Y
+        use_relu = ctx.use_relu  # Retrieve use_relu parameter
         M, K = input.shape
         N, K = weight.shape
 
-        # Compute bias gradients and apply ReLU gradient in-place
+        # Handle bias gradients and ReLU gradient differently based on use_relu
         grad_bias = torch.empty_like(bias)
-        grid_fused = lambda META: (
-            triton.cdiv(N, META['BLOCK_SIZE_N']),
-        )
-        fused_relu_bias_backward_kernel[grid_fused](
-            grad_output, Y, grad_bias,
-            M, N,
-            grad_output.stride(0), grad_output.stride(1),
-        )
+        if use_relu:
+            grid_fused = lambda META: (
+                triton.cdiv(N, META['BLOCK_SIZE_N']),
+            )
+            fused_relu_bias_backward_kernel[grid_fused](
+                grad_output, Y, grad_bias,
+                M, N,
+                grad_output.stride(0), grad_output.stride(1),
+            )
+        else:
+            # If no ReLU, just sum the gradients for bias
+            grad_bias = grad_output.sum(0)
+            grad_output = grad_output.clone()  # Ensure we don't modify the original
 
         # Compute input gradients
         grad_input = torch.empty_like(input)
@@ -305,10 +315,11 @@ class TritonLinearFunction(Function):
         return grad_input, grad_weight, grad_bias
         
 class TritonLinear(nn.Module):
-    def __init__(self, in_features, out_features):
+    def __init__(self, in_features, out_features, use_relu=True):  # Modified signature
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
+        self.use_relu = use_relu  # Store the parameter
         self.weight = nn.Parameter(
             torch.empty(out_features, in_features, device='cuda', dtype=torch.float16)
         )
@@ -325,7 +336,7 @@ class TritonLinear(nn.Module):
             nn.init.uniform_(self.bias, -bound, bound)
 
     def forward(self, x):
-        return TritonLinearFunction.apply(x, self.weight, self.bias)
+        return TritonLinearFunction.apply(x, self.weight, self.bias, self.use_relu)
 
     def extra_repr(self) -> str:
-        return f'in_features={self.in_features}, out_features={self.out_features}'
+        return f'in_features={self.in_features}, out_features={self.out_features}, use_relu={self.use_relu}'
