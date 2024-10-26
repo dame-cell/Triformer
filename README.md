@@ -12,6 +12,7 @@ pip install triformer
 ```
 - Then you can use the components 
 - please keep in mind that the TritonLinear is a fused with relu
+- As of right now the TritonLinear is very slow compared to the Pytorch Linear layer, I'm asssuming its because I divided the kernel into 3 parts and the overhead of switching between different kernels is causing the slowdown I'm still looking into it. I might fused the kernels to see if that helps. 
   
 ```python
 from triformer import TritonLinear
@@ -40,3 +41,4 @@ You can try out the TritonMLP on CIFAR10 dataset using this Colab notebook:
 ## Future Plans - To Do
 - [ ] Create a library specifically for transformers in vision and language
 - [ ] Make the TritonLinear more flexible to either use relu or not
+- [ ] Fuse the kernels of TritonLinear to see if it speeds up the training process 
