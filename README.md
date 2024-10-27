@@ -40,7 +40,7 @@ You can try out the TritonMLP on CIFAR10 dataset using this Colab notebook:
 
 `I used a custom benchmark to test the performance because the one in triton is not intutive to me to use`
 
-![LayerNorm Benchmark](triformer\layer_norm_performance2.png)
+![LayerNorm Benchmark](triformer\layer_norm.png)
 
 Scales well with increasing feature dimensions
 - Particularly efficient for larger hidden sizes (N≥3072)
