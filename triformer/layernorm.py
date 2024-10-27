@@ -1,5 +1,5 @@
+# copied from https://triton-lang.org/main/getting-started/tutorials/05-layer-norm.html
 import torch
-
 import triton
 import triton.language as tl
 
@@ -201,4 +201,3 @@ class LayerNorm(torch.autograd.Function):
             BLOCK_SIZE_M=32,  #
             BLOCK_SIZE_N=128, num_ctas=1)
         return dx, None, dw, db, None
-
