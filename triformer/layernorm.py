@@ -17,156 +17,137 @@ def fwd_layernorm_kernel(
   output_stride_0,
   gamma_ptr,
   beta_ptr,
+  mean_centered_ptr,
+  normed_ptr,
   cols,
   eps,
+  stable,
   BLOCK_SIZE: tl.constexpr):
   
   row_idx = tl.program_id(axis=0)
-  row_start_ptr = input_ptr + (row_idx * input_stride_0)
-  cols_offseet = tl.arange(0, BLOCK_SIZE)
-  input_ptrs = row_start_ptr + cols_offseet
-  row_mask = cols_offseet < cols 
+  col_offset = tl.arange(0, BLOCK_SIZE)
+  row_mask = col_offset < cols 
   
-  # load the data from HBM to SRAM 
-  rows = tl.load(input_ptrs, mask=row_mask, other=0)
-  gamma = tl.load(gamma_ptr + cols_offseet, mask=row_mask)
-  beta = tl.load(beta_ptr + cols_offseet, mask=row_mask)
+  # Load inputs
+  x = tl.load(input_ptr + row_idx * input_stride_0 + col_offset, mask=row_mask, other=0.).to(tl.float32)
+  gamma = tl.load(gamma_ptr + col_offset, mask=row_mask).to(tl.float32)
+  beta = tl.load(beta_ptr + col_offset, mask=row_mask).to(tl.float32)
   
-  # start layer norm computation
-  mean = tl.sum(rows) / cols
-  var = tl.sum((rows - mean) * (rows - mean)) / cols
-  std = tl.sqrt(var + eps)
-  y = (rows - mean) / std
-  out = gamma * y + beta
+  # Numerical stability improvement
+  if stable:
+      row_max = tl.max(tl.where(row_mask, x, float('-inf')), axis=0)
+      x = tl.where(row_mask, x / row_max, 0.)
   
-  # write back to HBM 
-  output_row_ptrs = output_ptr + (row_idx * output_stride_0)
-  output_ptrs = output_row_ptrs + cols_offseet
-  tl.store(output_ptrs, out, mask=row_mask)
+  # Layer norm computation
+  mean = tl.sum(x, axis=0) / cols
+  x_centered = tl.where(row_mask, x - mean, 0.)
+  var = tl.sum(x_centered * x_centered, axis=0) / cols
+  inv_std = 1. / tl.sqrt(var + eps)
+  normed = x_centered * inv_std
+  
+  # Output computation
+  output = normed * gamma + beta
+  
+  # Store results
+  output_ptr = output_ptr + row_idx * output_stride_0 + col_offset
+  tl.store(output_ptr, output, mask=row_mask)
+  
+  # Store intermediate values for backward
+  mean_centered_ptr = mean_centered_ptr + row_idx * input_stride_0 + col_offset
+  normed_ptr = normed_ptr + row_idx * input_stride_0 + col_offset
+  tl.store(mean_centered_ptr, x_centered, mask=row_mask)
+  tl.store(normed_ptr, normed, mask=row_mask)
 
 
 # a very simple backward layernorm kernel 
 @triton.jit 
 def bwd_layernorm_kernel(
-  input_ptr,
-  input_stride_0,
   grad_output_ptr,
   grad_output_stride_0,
-  gamma_ptr, 
-  beta_ptr,
+  mean_centered_ptr,
+  normed_ptr,
+  gamma_ptr,
+  grad_input_ptr,
   cols,
   eps,
   BLOCK_SIZE: tl.constexpr):
   
   row_idx = tl.program_id(axis=0)
-  row_start_ptr = input_ptr + (row_idx * input_stride_0)
   col_offset = tl.arange(0, BLOCK_SIZE)
-  input_ptrs = row_start_ptr + col_offset
   row_mask = col_offset < cols 
   
-  # Load data for backward pass
-  x = tl.load(input_ptrs, mask=row_mask, other=0)
-  grad_output = tl.load(grad_output_ptr + (row_idx * grad_output_stride_0) + col_offset, mask=row_mask, other=0)
-  gamma = tl.load(gamma_ptr + col_offset, mask=row_mask)
+  # Load saved values from forward pass
+  dy = tl.load(grad_output_ptr + row_idx * grad_output_stride_0 + col_offset, mask=row_mask, other=0.).to(tl.float32)
+  x_centered = tl.load(mean_centered_ptr + row_idx * grad_output_stride_0 + col_offset, mask=row_mask, other=0.).to(tl.float32)
+  normed = tl.load(normed_ptr + row_idx * grad_output_stride_0 + col_offset, mask=row_mask, other=0.).to(tl.float32)
+  gamma = tl.load(gamma_ptr + col_offset, mask=row_mask).to(tl.float32)
   
-  # Calculate mean and variance (more numerically stable)
-  mean = tl.sum(x) / cols
-  centered_x = x - mean
-  var = tl.sum(centered_x * centered_x) / cols
-  std = tl.sqrt(var + eps)
-  inv_std = 1.0 / std
-  normalized_x = centered_x * inv_std
+  # Compute gradients
+  dy_gamma = dy * gamma
+  var = tl.sum(x_centered * x_centered, axis=0) / cols
+  inv_std = 1. / tl.sqrt(var + eps)
   
-  # Compute gradients with better numerical stability
-  grad_output_scaled = grad_output * gamma
-  sum_grad_output = tl.sum(grad_output_scaled)
-  sum_grad_output_x = tl.sum(grad_output_scaled * normalized_x)
-  
-  # Gradient for input with improved stability
-  grad_input = gamma * inv_std * (
-      grad_output - (normalized_x * sum_grad_output_x + sum_grad_output) / cols
+  grad_input = 1. / cols * inv_std * (
+      cols * dy_gamma - 
+      tl.sum(dy_gamma, axis=0) - 
+      normed * tl.sum(dy_gamma * normed, axis=0)
   )
   
-  # Gradients for gamma and beta
-  grad_gamma = grad_output * normalized_x
-  grad_beta = grad_output
-  
-  # Store results
-  grad_input_ptrs = grad_output_ptr + (row_idx * grad_output_stride_0) + col_offset
-  tl.store(grad_input_ptrs, grad_input, mask=row_mask)
-  
-  # Accumulate gradients for gamma and beta across rows
-  tl.atomic_add(gamma_ptr + col_offset, grad_gamma, mask=row_mask)
-  tl.atomic_add(beta_ptr + col_offset, grad_beta, mask=row_mask)
+  # Store gradients
+  grad_input_ptr = grad_input_ptr + row_idx * grad_output_stride_0 + col_offset
+  tl.store(grad_input_ptr, grad_input, mask=row_mask)
 
 
 
 class TritonLayerNormFunction(Function):
     @staticmethod
-    def forward(ctx, input, gamma, beta, eps):  
-        rows, cols = input.shape 
-        assert input.dim() == 2, "We are working with only 2D tensors for now" 
-        block_size = triton.next_power_of_2(cols)
-        num_warps = 4 
-        if block_size == 2047:
-            num_warps = 8 
-        if block_size == 4095:
-            num_warps = 16 
-
-        sm_out = torch.empty_like(input)
-        ctx.save_for_backward(input, gamma, beta)
-        ctx.eps = eps
+    def forward(ctx, input, gamma, beta, eps=1e-5, stable=True):
+        rows, cols = input.shape
+        assert input.dim() == 2, "We are working with only 2D tensors for now"
         
+        # Allocate output and intermediate buffers
+        output = torch.empty_like(input)
+        mean_centered = torch.empty_like(input)
+        normed = torch.empty_like(input)
+        
+        block_size = triton.next_power_of_2(cols)
         grid = (rows,)
+        
         fwd_layernorm_kernel[grid](
-            input,
-            input.stride(0),
-            sm_out,
-            sm_out.stride(0),
-            gamma,
-            beta,
-            cols,
-            eps,
+            input, input.stride(0),
+            output, output.stride(0),
+            gamma, beta,
+            mean_centered, normed,
+            cols, eps, stable,
             BLOCK_SIZE=block_size
         )
-
-        return sm_out  
+        
+        ctx.save_for_backward(mean_centered, normed, gamma)
+        ctx.eps = eps
+        return output
 
     @staticmethod
     def backward(ctx, grad_output):
-        rows, cols = grad_output.shape  
-        assert grad_output.dim() == 2, "We are working with only 2D tensors for now" 
-        block_size = triton.next_power_of_2(cols)
-        num_warps = 4 
-        if block_size == 2047:
-            num_warps = 8 
-        if block_size == 4095:
-            num_warps = 16 
-
-        input, gamma, beta = ctx.saved_tensors
-        eps = ctx.eps
-
-        # Create tensors to store gradients - initialize to zero!
+        mean_centered, normed, gamma = ctx.saved_tensors
+        rows, cols = grad_output.shape
+        
         grad_input = torch.empty_like(grad_output)
-        grad_gamma = torch.zeros_like(gamma)  # Changed to zeros_like
-        grad_beta = torch.zeros_like(beta)    # Changed to zeros_like
-
+        grad_gamma = torch.zeros_like(gamma)
+        grad_beta = torch.zeros_like(gamma)
+        
+        block_size = triton.next_power_of_2(cols)
         grid = (rows,)
+        
         bwd_layernorm_kernel[grid](
-            input,
-            input.stride(0),
-            grad_output,
-            grad_output.stride(0),
-            grad_gamma,  # Changed from gamma to grad_gamma
-            grad_beta,   # Changed from beta to grad_beta
-            cols,
-            eps,
+            grad_output, grad_output.stride(0),
+            mean_centered, normed,
+            gamma, grad_input,
+            cols, ctx.eps,
             BLOCK_SIZE=block_size
         )
-
-        # Return gradients for all inputs (input, gamma, beta, eps)
-        # eps is a scalar, so its gradient is None
-        return grad_input, grad_gamma, grad_beta, None
-
-
-
+        
+        # Compute gradients for gamma and beta
+        grad_gamma = (grad_output * normed).sum(0)
+        grad_beta = grad_output.sum(0)
+        
+        return grad_input, grad_gamma, grad_beta, None, None
