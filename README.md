@@ -45,18 +45,10 @@ So, I tried creating my own Layer Normalization kernel with Triton. Turns out, i
 
 
 
-![LayerNorm Benchmark](triformer/layer_norm.png)
-
-
-
-
-
-
 ## Future Plans - To Do
 - [ ] Create a library specifically for transformers in vision and language
 - [x] Implement the layernorm in Triton 
 - [ ] Implement the softmax in Triton 
 - [ ] Make the TritonLinear more flexible to either use relu or not
 - [ ] Fuse the kernels of TritonLinear to see if it speeds up the training process 
-- [ ] 
 
