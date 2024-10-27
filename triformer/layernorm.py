@@ -7,7 +7,8 @@ import time
 import matplotlib.pyplot as plt
 
 
-    
+
+# a very simple forward layernorm kernel 
 @triton.jit
 def fwd_layernorm_kernel(
   input_ptr,
@@ -42,12 +43,67 @@ def fwd_layernorm_kernel(
   output_row_ptrs = output_ptr + (row_idx * output_stride_0)
   output_ptrs = output_row_ptrs + cols_offseet
   tl.store(output_ptrs, out, mask=row_mask)
+
+
+# a very simple backward layernorm kernel 
+@triton.jit 
+def bwd_layernorm_kernel(
+  input_ptr,
+  input_stride_0,
+  grad_output_ptr,
+  grad_output_stride_0,
+  gamma_ptr, 
+  beta_ptr,
+  cols,
+  eps,
+  BLOCK_SIZE: tl.constexpr):
   
+  row_idx = tl.program_id(axis=0)
+  row_start_ptr = input_ptr + (row_idx * input_stride_0)
+  col_offset = tl.arange(0, BLOCK_SIZE)
+  input_ptrs = row_start_ptr + col_offset
+  row_mask = col_offset < cols 
+  
+  # Load data for backward pass
+  x = tl.load(input_ptrs, mask=row_mask, other=0)
+  grad_output = tl.load(grad_output_ptr + (row_idx * grad_output_stride_0) + col_offset, mask=row_mask, other=0)
+  gamma = tl.load(gamma_ptr + col_offset, mask=row_mask)
+  
+  # Calculate mean and variance (more numerically stable)
+  mean = tl.sum(x) / cols
+  centered_x = x - mean
+  var = tl.sum(centered_x * centered_x) / cols
+  std = tl.sqrt(var + eps)
+  inv_std = 1.0 / std
+  normalized_x = centered_x * inv_std
+  
+  # Compute gradients with better numerical stability
+  grad_output_scaled = grad_output * gamma
+  sum_grad_output = tl.sum(grad_output_scaled)
+  sum_grad_output_x = tl.sum(grad_output_scaled * normalized_x)
+  
+  # Gradient for input with improved stability
+  grad_input = gamma * inv_std * (
+      grad_output - (normalized_x * sum_grad_output_x + sum_grad_output) / cols
+  )
+  
+  # Gradients for gamma and beta
+  grad_gamma = grad_output * normalized_x
+  grad_beta = grad_output
+  
+  # Store results
+  grad_input_ptrs = grad_output_ptr + (row_idx * grad_output_stride_0) + col_offset
+  tl.store(grad_input_ptrs, grad_input, mask=row_mask)
+  
+  # Accumulate gradients for gamma and beta across rows
+  tl.atomic_add(gamma_ptr + col_offset, grad_gamma, mask=row_mask)
+  tl.atomic_add(beta_ptr + col_offset, grad_beta, mask=row_mask)
 
 
-class TritonLayerNorm(Function):
+
+class TritonLayerNormFunction(Function):
     @staticmethod
-    def forward(ctx, input, gamma, beta, eps):  # Add `ctx` as the first argument
+    def forward(ctx, input, gamma, beta, eps):  
         rows, cols = input.shape 
         assert input.dim() == 2, "We are working with only 2D tensors for now" 
         block_size = triton.next_power_of_2(cols)
@@ -58,7 +114,9 @@ class TritonLayerNorm(Function):
             num_warps = 16 
 
         sm_out = torch.empty_like(input)
-
+        ctx.save_for_backward(input, gamma, beta)
+        ctx.eps = eps
+        
         grid = (rows,)
         fwd_layernorm_kernel[grid](
             input,
@@ -74,106 +132,41 @@ class TritonLayerNorm(Function):
 
         return sm_out  
 
+    @staticmethod
+    def backward(ctx, grad_output):
+        rows, cols = grad_output.shape  
+        assert grad_output.dim() == 2, "We are working with only 2D tensors for now" 
+        block_size = triton.next_power_of_2(cols)
+        num_warps = 4 
+        if block_size == 2047:
+            num_warps = 8 
+        if block_size == 4095:
+            num_warps = 16 
 
+        input, gamma, beta = ctx.saved_tensors
+        eps = ctx.eps
 
+        # Create tensors to store gradients - initialize to zero!
+        grad_input = torch.empty_like(grad_output)
+        grad_gamma = torch.zeros_like(gamma)  # Changed to zeros_like
+        grad_beta = torch.zeros_like(beta)    # Changed to zeros_like
 
+        grid = (rows,)
+        bwd_layernorm_kernel[grid](
+            input,
+            input.stride(0),
+            grad_output,
+            grad_output.stride(0),
+            grad_gamma,  # Changed from gamma to grad_gamma
+            grad_beta,   # Changed from beta to grad_beta
+            cols,
+            eps,
+            BLOCK_SIZE=block_size
+        )
 
-def benchmark_layer_norm_with_plot(dtype=torch.float16, num_runs=100):  # Increase runs to 2000 for longer runtime
-    M = 4096   # Fixed M dimension
-    N_values = [512 * i for i in range(2, 24)]  # Testing only 6 points instead of 30
+        # Return gradients for all inputs (input, gamma, beta, eps)
+        # eps is a scalar, so its gradient is None
+        return grad_input, grad_gamma, grad_beta, None
 
-    torch_throughputs = []
-    triton_throughputs = []
-
-    for N in N_values:
-        print(f"\nBenchmarking N={N}")
-        # Create data
-        x_shape = (M, N)
-        w_shape = (x_shape[-1],)
-        gamma = torch.ones(w_shape, dtype=dtype, device='cuda')
-        beta = torch.zeros(w_shape, dtype=dtype, device='cuda')
-        x = -2.3 + 0.5 * torch.randn(x_shape, dtype=dtype, device='cuda')
-
-        # PyTorch LayerNorm
-        torch_ln = torch.nn.LayerNorm(N).to('cuda').to(dtype)
-
-        # Warmup
-        for _ in range(10):
-            torch_ln(x)
-            TritonLayerNorm.apply(x, gamma, beta, 1e-5)
-
-        # Benchmark functions
-        def bench_torch():
-            torch_ln(x)
-
-        def bench_triton():
-            TritonLayerNorm.apply(x, gamma, beta, 1e-5)
-
-        # Benchmark PyTorch
-        torch.cuda.synchronize()
-        start_time = time.time()
-        for _ in range(num_runs):
-            bench_torch()
-            torch.cuda.synchronize()
-        torch_time = (time.time() - start_time) / num_runs
-
-        # Benchmark Triton
-        torch.cuda.synchronize()
-        start_time = time.time()
-        for _ in range(num_runs):
-            bench_triton()
-            torch.cuda.synchronize()
-        triton_time = (time.time() - start_time) / num_runs
-
-        # Calculate throughput (GB/s)
-        bytes_processed = 2 * x.numel() * x.element_size()  # input + output
-        torch_throughput = bytes_processed / torch_time / 1e9
-        triton_throughput = bytes_processed / triton_time / 1e9
-
-        torch_throughputs.append(torch_throughput)
-        triton_throughputs.append(triton_throughput)
-
-        # Print current iteration results
-        print(f"N={N}:")
-        print(f"PyTorch: {torch_time*1000:.3f} ms, {torch_throughput:.2f} GB/s")
-        print(f"Triton:  {triton_time*1000:.3f} ms, {triton_throughput:.2f} GB/s")
-        print(f"Speedup: {torch_time/triton_time:.2f}x")
-
-    # Create the plot
-    plt.figure(figsize=(10, 6))
-    plt.plot(N_values, torch_throughputs, 'g-', label='Torch', marker='o')
-    plt.plot(N_values, triton_throughputs, 'b-', label='Triton', marker='o')
-
-    plt.xlabel('N')
-    plt.ylabel('GB/s')
-    plt.title(f'LayerNorm Performance (M={M})')
-    plt.legend()
-    plt.grid(True)
-
-    # Add throughput values as text
-    for i, N in enumerate(N_values):
-        plt.text(N, torch_throughputs[i], f'{torch_throughputs[i]:.0f}',
-                 verticalalignment='bottom')
-        plt.text(N, triton_throughputs[i], f'{triton_throughputs[i]:.0f}',
-                 verticalalignment='top')
-
-    # Display the plot
-    plt.savefig('layer_norm_performance2.png')
-    plt.show()
-
-    # Print summary
-    print("\nSummary:")
-    print(f"{'N':<8} {'Torch (GB/s)':<15} {'Triton (GB/s)':<15} {'Speedup':<10}")
-    print("-" * 48)
-    for i, N in enumerate(N_values):
-        speedup = triton_throughputs[i] / torch_throughputs[i]
-        print(f"{N:<8} {torch_throughputs[i]:<15.2f} {triton_throughputs[i]:<15.2f} {speedup:<10.2f}x")
-
-    return N_values, torch_throughputs, triton_throughputs
-
-
-if __name__ == "__main__":
-    # Run benchmark and create plot
-    N_values, torch_throughputs, triton_throughputs = benchmark_layer_norm_with_plot()
 
 
