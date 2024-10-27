@@ -78,13 +78,13 @@ class TritonLayerNorm(Function):
 
 
 
-def benchmark_layer_norm_with_plot(dtype=torch.float16, num_runs=2000):
-    M = 4096 *2  # Fixed M dimension
-    N_values = [512 * i for i in range(2, 8)]  # Testing only 6 points instead of 30
-    
+def benchmark_layer_norm_with_plot(dtype=torch.float16, num_runs=100):  # Increase runs to 2000 for longer runtime
+    M = 4096   # Fixed M dimension
+    N_values = [512 * i for i in range(2, 24)]  # Testing only 6 points instead of 30
+
     torch_throughputs = []
     triton_throughputs = []
-    
+
     for N in N_values:
         print(f"\nBenchmarking N={N}")
         # Create data
@@ -93,22 +93,22 @@ def benchmark_layer_norm_with_plot(dtype=torch.float16, num_runs=2000):
         gamma = torch.ones(w_shape, dtype=dtype, device='cuda')
         beta = torch.zeros(w_shape, dtype=dtype, device='cuda')
         x = -2.3 + 0.5 * torch.randn(x_shape, dtype=dtype, device='cuda')
-        
+
         # PyTorch LayerNorm
         torch_ln = torch.nn.LayerNorm(N).to('cuda').to(dtype)
-        
+
         # Warmup
-        for _ in range(60):
-            torch_out = torch_ln(x)
-            triton_out = TritonLayerNorm.apply(x, gamma, beta, 1e-5)
-            
+        for _ in range(10):
+            torch_ln(x)
+            TritonLayerNorm.apply(x, gamma, beta, 1e-5)
+
         # Benchmark functions
         def bench_torch():
             torch_ln(x)
-            
+
         def bench_triton():
             TritonLayerNorm.apply(x, gamma, beta, 1e-5)
-            
+
         # Benchmark PyTorch
         torch.cuda.synchronize()
         start_time = time.time()
@@ -116,7 +116,7 @@ def benchmark_layer_norm_with_plot(dtype=torch.float16, num_runs=2000):
             bench_torch()
             torch.cuda.synchronize()
         torch_time = (time.time() - start_time) / num_runs
-        
+
         # Benchmark Triton
         torch.cuda.synchronize()
         start_time = time.time()
@@ -124,42 +124,43 @@ def benchmark_layer_norm_with_plot(dtype=torch.float16, num_runs=2000):
             bench_triton()
             torch.cuda.synchronize()
         triton_time = (time.time() - start_time) / num_runs
-        
+
         # Calculate throughput (GB/s)
         bytes_processed = 2 * x.numel() * x.element_size()  # input + output
         torch_throughput = bytes_processed / torch_time / 1e9
         triton_throughput = bytes_processed / triton_time / 1e9
-        
+
         torch_throughputs.append(torch_throughput)
         triton_throughputs.append(triton_throughput)
-        
+
         # Print current iteration results
         print(f"N={N}:")
         print(f"PyTorch: {torch_time*1000:.3f} ms, {torch_throughput:.2f} GB/s")
         print(f"Triton:  {triton_time*1000:.3f} ms, {triton_throughput:.2f} GB/s")
         print(f"Speedup: {torch_time/triton_time:.2f}x")
-        
+
     # Create the plot
     plt.figure(figsize=(10, 6))
     plt.plot(N_values, torch_throughputs, 'g-', label='Torch', marker='o')
     plt.plot(N_values, triton_throughputs, 'b-', label='Triton', marker='o')
-    
+
     plt.xlabel('N')
     plt.ylabel('GB/s')
     plt.title(f'LayerNorm Performance (M={M})')
     plt.legend()
     plt.grid(True)
-    
+
     # Add throughput values as text
     for i, N in enumerate(N_values):
         plt.text(N, torch_throughputs[i], f'{torch_throughputs[i]:.0f}',
-                verticalalignment='bottom')
+                 verticalalignment='bottom')
         plt.text(N, triton_throughputs[i], f'{triton_throughputs[i]:.0f}',
-                verticalalignment='top')
-    
+                 verticalalignment='top')
+
     # Display the plot
+    plt.savefig('layer_norm_performance2.png')
     plt.show()
-    
+
     # Print summary
     print("\nSummary:")
     print(f"{'N':<8} {'Torch (GB/s)':<15} {'Triton (GB/s)':<15} {'Speedup':<10}")
@@ -169,6 +170,7 @@ def benchmark_layer_norm_with_plot(dtype=torch.float16, num_runs=2000):
         print(f"{N:<8} {torch_throughputs[i]:<15.2f} {triton_throughputs[i]:<15.2f} {speedup:<10.2f}x")
 
     return N_values, torch_throughputs, triton_throughputs
+
 
 if __name__ == "__main__":
     # Run benchmark and create plot
