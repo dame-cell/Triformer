@@ -139,7 +139,7 @@ def _layer_norm_bwd_dwdb(DW,  # pointer to the partial sum of weights gradient
     tl.store(FINAL_DW + cols, sum_dw, mask=cols < N)
     tl.store(FINAL_DB + cols, sum_db, mask=cols < N)
     
-class LayerNorm(torch.autograd.Function):
+class LayerNormFunction(torch.autograd.Function):
 
     @staticmethod
     def forward(ctx, x, normalized_shape, weight, bias, eps):
@@ -201,3 +201,10 @@ class LayerNorm(torch.autograd.Function):
             BLOCK_SIZE_M=32,  #
             BLOCK_SIZE_N=128, num_ctas=1)
         return dx, None, dw, db, None
+
+
+
+def layer_norm(x, weight, bias, eps=1e-5):
+
+    return LayerNormFunction.apply(x, weight, bias, eps)
+
