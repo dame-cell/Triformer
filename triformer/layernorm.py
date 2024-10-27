@@ -46,40 +46,40 @@ def fwd_layernorm_kernel(
 
 
 class TritonLayerNorm(Function):
-  @staticmethod
-  def forward(input, gamma, beta, eps=1e-8):
-    rows, cols = input.shape 
-    assert input.dim() == 2, "we are working with only 2d tensor for now" 
-    block_size = triton.next_power_of_2(cols)
-    num_warps = 4 
-    if block_size == 2047:
-      num_warps = 8 
-    if block_size == 4095:
-      num_warps = 16 
-   
-    sm_out = torch.empty_like(input)
-    
-    
-    grid = (rows,)
-    fwd_layernorm_kernel[grid](
-      input,
-      input.stride(0),
-      sm_out,
-      sm_out.stride(0),
-      gamma,
-      beta,
-      cols,
-      eps,
-      BLOCK_SIZE=block_size
-    )
-    
-    return sm_out  
+    @staticmethod
+    def forward(ctx, input, gamma, beta, eps):  # Add `ctx` as the first argument
+        rows, cols = input.shape 
+        assert input.dim() == 2, "We are working with only 2D tensors for now" 
+        block_size = triton.next_power_of_2(cols)
+        num_warps = 4 
+        if block_size == 2047:
+            num_warps = 8 
+        if block_size == 4095:
+            num_warps = 16 
+
+        sm_out = torch.empty_like(input)
+
+        grid = (rows,)
+        fwd_layernorm_kernel[grid](
+            input,
+            input.stride(0),
+            sm_out,
+            sm_out.stride(0),
+            gamma,
+            beta,
+            cols,
+            eps,
+            BLOCK_SIZE=block_size
+        )
+
+        return sm_out  
 
 
 
 
-def benchmark_layer_norm_with_plot(dtype=torch.float16, num_runs=500):
-    M = 4096  # Fixed M dimension
+
+def benchmark_layer_norm_with_plot(dtype=torch.float16, num_runs=2000):
+    M = 4096 *2  # Fixed M dimension
     N_values = [512 * i for i in range(2, 8)]  # Testing only 6 points instead of 30
     
     torch_throughputs = []
@@ -98,7 +98,7 @@ def benchmark_layer_norm_with_plot(dtype=torch.float16, num_runs=500):
         torch_ln = torch.nn.LayerNorm(N).to('cuda').to(dtype)
         
         # Warmup
-        for _ in range(10):
+        for _ in range(60):
             torch_out = torch_ln(x)
             triton_out = TritonLayerNorm.apply(x, gamma, beta, 1e-5)
             
@@ -173,3 +173,5 @@ def benchmark_layer_norm_with_plot(dtype=torch.float16, num_runs=500):
 if __name__ == "__main__":
     # Run benchmark and create plot
     N_values, torch_throughputs, triton_throughputs = benchmark_layer_norm_with_plot()
+
+
