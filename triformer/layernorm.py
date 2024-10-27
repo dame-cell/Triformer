@@ -1,172 +1,204 @@
+import torch
+
 import triton
 import triton.language as tl
-import torch 
-import torch.nn as nn 
-from torch.autograd import Function
-import time 
-import matplotlib.pyplot as plt
 
-
-
-# a very simple forward layernorm kernel 
 @triton.jit
-def fwd_layernorm_kernel(
-  input_ptr,
-  input_stride_0,
-  output_ptr,
-  output_stride_0,
-  gamma_ptr,
-  beta_ptr,
-  mean_centered_ptr,
-  normed_ptr,
-  cols,
-  eps,
-  stable,
-  BLOCK_SIZE: tl.constexpr):
-  
-  row_idx = tl.program_id(axis=0)
-  col_offset = tl.arange(0, BLOCK_SIZE)
-  row_mask = col_offset < cols 
-  
-  # Load inputs
-  x = tl.load(input_ptr + row_idx * input_stride_0 + col_offset, mask=row_mask, other=0.).to(tl.float32)
-  gamma = tl.load(gamma_ptr + col_offset, mask=row_mask, other=0.).to(tl.float32)
-  beta = tl.load(beta_ptr + col_offset, mask=row_mask, other=0.).to(tl.float32)
-  
-  # Numerical stability improvement - always use stable computation
-  row_max = tl.max(tl.where(row_mask, x, float('-inf')), axis=0)
-  x = tl.where(row_mask, x - row_max, 0.)
-  
-  # Layer norm computation with careful masking
-  masked_x = tl.where(row_mask, x, 0.)
-  mean = tl.sum(masked_x, axis=0) / cols
-  x_centered = tl.where(row_mask, x - mean, 0.)
-  
-  # Variance computation with better numerical stability
-  x_centered_squared = x_centered * x_centered
-  masked_squared = tl.where(row_mask, x_centered_squared, 0.)
-  var = tl.sum(masked_squared, axis=0) / cols
-  inv_std = 1. / tl.sqrt(var + eps)
-  
-  # Normalize and scale
-  normed = x_centered * inv_std
-  output = tl.where(row_mask, normed * gamma + beta, 0.)
-  
-  # Store results
-  output_ptr = output_ptr + row_idx * output_stride_0 + col_offset
-  tl.store(output_ptr, output, mask=row_mask)
-  
-  # Store intermediate values for backward
-  mean_centered_ptr = mean_centered_ptr + row_idx * input_stride_0 + col_offset
-  normed_ptr = normed_ptr + row_idx * input_stride_0 + col_offset
-  tl.store(mean_centered_ptr, x_centered, mask=row_mask)
-  tl.store(normed_ptr, normed, mask=row_mask)
+def _layer_norm_fwd_fused(
+    X,  # pointer to the input
+    Y,  # pointer to the output
+    W,  # pointer to the weights
+    B,  # pointer to the biases
+    Mean,  # pointer to the mean
+    Rstd,  # pointer to the 1/std
+    stride,  # how much to increase the pointer when moving by 1 row
+    N,  # number of columns in X
+    eps,  # epsilon to avoid division by zero
+    BLOCK_SIZE: tl.constexpr,
+):
+    # Map the program id to the row of X and Y it should compute.
+    row = tl.program_id(0)
+    Y += row * stride
+    X += row * stride
+    # Compute mean
+    mean = 0
+    _mean = tl.zeros([BLOCK_SIZE], dtype=tl.float32)
+    for off in range(0, N, BLOCK_SIZE):
+        cols = off + tl.arange(0, BLOCK_SIZE)
+        a = tl.load(X + cols, mask=cols < N, other=0.).to(tl.float32)
+        _mean += a
+    mean = tl.sum(_mean, axis=0) / N
+    # Compute variance
+    _var = tl.zeros([BLOCK_SIZE], dtype=tl.float32)
+    for off in range(0, N, BLOCK_SIZE):
+        cols = off + tl.arange(0, BLOCK_SIZE)
+        x = tl.load(X + cols, mask=cols < N, other=0.).to(tl.float32)
+        x = tl.where(cols < N, x - mean, 0.)
+        _var += x * x
+    var = tl.sum(_var, axis=0) / N
+    rstd = 1 / tl.sqrt(var + eps)
+    # Write mean / rstd
+    tl.store(Mean + row, mean)
+    tl.store(Rstd + row, rstd)
+    # Normalize and apply linear transformation
+    for off in range(0, N, BLOCK_SIZE):
+        cols = off + tl.arange(0, BLOCK_SIZE)
+        mask = cols < N
+        w = tl.load(W + cols, mask=mask)
+        b = tl.load(B + cols, mask=mask)
+        x = tl.load(X + cols, mask=mask, other=0.).to(tl.float32)
+        x_hat = (x - mean) * rstd
+        y = x_hat * w + b
+        # Write output
+        tl.store(Y + cols, y, mask=mask)
+        
+        
+@triton.jit
+def _layer_norm_bwd_dx_fused(DX,  # pointer to the input gradient
+                             DY,  # pointer to the output gradient
+                             DW,  # pointer to the partial sum of weights gradient
+                             DB,  # pointer to the partial sum of biases gradient
+                             X,  # pointer to the input
+                             W,  # pointer to the weights
+                             Mean,  # pointer to the mean
+                             Rstd,  # pointer to the 1/std
+                             Lock,  # pointer to the lock
+                             stride,  # how much to increase the pointer when moving by 1 row
+                             N,  # number of columns in X
+                             GROUP_SIZE_M: tl.constexpr, BLOCK_SIZE_N: tl.constexpr):
+    # Map the program id to the elements of X, DX, and DY it should compute.
+    row = tl.program_id(0)
+    cols = tl.arange(0, BLOCK_SIZE_N)
+    mask = cols < N
+    X += row * stride
+    DY += row * stride
+    DX += row * stride
+    # Offset locks and weights/biases gradient pointer for parallel reduction
+    lock_id = row % GROUP_SIZE_M
+    Lock += lock_id
+    Count = Lock + GROUP_SIZE_M
+    DW = DW + lock_id * N + cols
+    DB = DB + lock_id * N + cols
+    # Load data to SRAM
+    x = tl.load(X + cols, mask=mask, other=0).to(tl.float32)
+    dy = tl.load(DY + cols, mask=mask, other=0).to(tl.float32)
+    w = tl.load(W + cols, mask=mask).to(tl.float32)
+    mean = tl.load(Mean + row)
+    rstd = tl.load(Rstd + row)
+    # Compute dx
+    xhat = (x - mean) * rstd
+    wdy = w * dy
+    xhat = tl.where(mask, xhat, 0.)
+    wdy = tl.where(mask, wdy, 0.)
+    c1 = tl.sum(xhat * wdy, axis=0) / N
+    c2 = tl.sum(wdy, axis=0) / N
+    dx = (wdy - (xhat * c1 + c2)) * rstd
+    # Write dx
+    tl.store(DX + cols, dx, mask=mask)
+    # Accumulate partial sums for dw/db
+    partial_dw = (dy * xhat).to(w.dtype)
+    partial_db = (dy).to(w.dtype)
+    while tl.atomic_cas(Lock, 0, 1) == 1:
+        pass
+    count = tl.load(Count)
+    # First store doesn't accumulate
+    if count == 0:
+        tl.atomic_xchg(Count, 1)
+    else:
+        partial_dw += tl.load(DW, mask=mask)
+        partial_db += tl.load(DB, mask=mask)
+    tl.store(DW, partial_dw, mask=mask)
+    tl.store(DB, partial_db, mask=mask)
+    # Release the lock
+    tl.atomic_xchg(Lock, 0)
 
 
-# a very simple backward layernorm kernel 
-@triton.jit 
-def bwd_layernorm_kernel(
-  grad_output_ptr,
-  grad_output_stride_0,
-  mean_centered_ptr,
-  normed_ptr,
-  gamma_ptr,
-  grad_input_ptr,
-  cols,
-  eps,
-  BLOCK_SIZE: tl.constexpr):
-  
-  row_idx = tl.program_id(axis=0)
-  col_offset = tl.arange(0, BLOCK_SIZE)
-  row_mask = col_offset < cols 
-  
-  # Load saved values from forward pass with careful masking
-  dy = tl.load(grad_output_ptr + row_idx * grad_output_stride_0 + col_offset, 
-               mask=row_mask, other=0.).to(tl.float32)
-  x_centered = tl.load(mean_centered_ptr + row_idx * grad_output_stride_0 + col_offset, 
-                       mask=row_mask, other=0.).to(tl.float32)
-  normed = tl.load(normed_ptr + row_idx * grad_output_stride_0 + col_offset, 
-                    mask=row_mask, other=0.).to(tl.float32)
-  gamma = tl.load(gamma_ptr + col_offset, mask=row_mask, other=0.).to(tl.float32)
-  
-  # Compute gradients with better numerical stability
-  dy_gamma = tl.where(row_mask, dy * gamma, 0.)
-  
-  # Compute variance and inverse standard deviation
-  x_centered_squared = tl.where(row_mask, x_centered * x_centered, 0.)
-  var = tl.sum(x_centered_squared, axis=0) / cols
-  inv_std = 1. / tl.sqrt(var + eps)
-  
-  # Compute gradient components
-  sum_dy_gamma = tl.sum(dy_gamma, axis=0)
-  sum_dy_gamma_normed = tl.sum(dy_gamma * normed, axis=0)
-  
-  # Final gradient computation with careful masking
-  grad_input = tl.where(
-      row_mask,
-      1. / cols * inv_std * (
-          cols * dy_gamma - 
-          sum_dy_gamma - 
-          normed * sum_dy_gamma_normed
-      ),
-      0.
-  )
-  
-  # Store gradients
-  grad_input_ptr = grad_input_ptr + row_idx * grad_output_stride_0 + col_offset
-  tl.store(grad_input_ptr, grad_input, mask=row_mask)
+@triton.jit
+def _layer_norm_bwd_dwdb(DW,  # pointer to the partial sum of weights gradient
+                         DB,  # pointer to the partial sum of biases gradient
+                         FINAL_DW,  # pointer to the weights gradient
+                         FINAL_DB,  # pointer to the biases gradient
+                         M,  # GROUP_SIZE_M
+                         N,  # number of columns
+                         BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_N: tl.constexpr):
+    # Map the program id to the elements of DW and DB it should compute.
+    pid = tl.program_id(0)
+    cols = pid * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
+    dw = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
+    db = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
+    # Iterate through the rows of DW and DB to sum the partial sums.
+    for i in range(0, M, BLOCK_SIZE_M):
+        rows = i + tl.arange(0, BLOCK_SIZE_M)
+        mask = (rows[:, None] < M) & (cols[None, :] < N)
+        offs = rows[:, None] * N + cols[None, :]
+        dw += tl.load(DW + offs, mask=mask, other=0.)
+        db += tl.load(DB + offs, mask=mask, other=0.)
+    # Write the final sum to the output.
+    sum_dw = tl.sum(dw, axis=0)
+    sum_db = tl.sum(db, axis=0)
+    tl.store(FINAL_DW + cols, sum_dw, mask=cols < N)
+    tl.store(FINAL_DB + cols, sum_db, mask=cols < N)
+    
+class LayerNorm(torch.autograd.Function):
 
-
-
-class TritonLayerNormFunction(Function):
     @staticmethod
-    def forward(ctx, input, gamma, beta, eps=1e-5, stable=True):
-        rows, cols = input.shape
-        assert input.dim() == 2, "We are working with only 2D tensors for now"
-        
-        # Allocate output and intermediate buffers
-        output = torch.empty_like(input)
-        mean_centered = torch.empty_like(input)
-        normed = torch.empty_like(input)
-        
-        block_size = triton.next_power_of_2(cols)
-        grid = (rows,)
-        
-        fwd_layernorm_kernel[grid](
-            input, input.stride(0),
-            output, output.stride(0),
-            gamma, beta,
-            mean_centered, normed,
-            cols, eps, stable,
-            BLOCK_SIZE=block_size
-        )
-        
-        ctx.save_for_backward(mean_centered, normed, gamma)
+    def forward(ctx, x, normalized_shape, weight, bias, eps):
+        # allocate output
+        y = torch.empty_like(x)
+        # reshape input data into 2D tensor
+        x_arg = x.reshape(-1, x.shape[-1])
+        M, N = x_arg.shape
+        mean = torch.empty((M, ), dtype=torch.float32, device=x.device)
+        rstd = torch.empty((M, ), dtype=torch.float32, device=x.device)
+        # Less than 64KB per feature: enqueue fused kernel
+        MAX_FUSED_SIZE = 65536 // x.element_size()
+        BLOCK_SIZE = min(MAX_FUSED_SIZE, triton.next_power_of_2(N))
+        if N > BLOCK_SIZE:
+            raise RuntimeError("This layer norm doesn't support feature dim >= 64KB.")
+        # heuristics for number of warps
+        num_warps = min(max(BLOCK_SIZE // 256, 1), 8)
+        # enqueue kernel
+        _layer_norm_fwd_fused[(M, )](  #
+            x_arg, y, weight, bias, mean, rstd,  #
+            x_arg.stride(0), N, eps,  #
+            BLOCK_SIZE=BLOCK_SIZE, num_warps=num_warps, num_ctas=1)
+        ctx.save_for_backward(x, weight, bias, mean, rstd)
+        ctx.BLOCK_SIZE = BLOCK_SIZE
+        ctx.num_warps = num_warps
         ctx.eps = eps
-        return output
+        return y
 
     @staticmethod
-    def backward(ctx, grad_output):
-        mean_centered, normed, gamma = ctx.saved_tensors
-        rows, cols = grad_output.shape
-        
-        grad_input = torch.empty_like(grad_output)
-        grad_gamma = torch.zeros_like(gamma)
-        grad_beta = torch.zeros_like(gamma)
-        
-        block_size = triton.next_power_of_2(cols)
-        grid = (rows,)
-        
-        bwd_layernorm_kernel[grid](
-            grad_output, grad_output.stride(0),
-            mean_centered, normed,
-            gamma, grad_input,
-            cols, ctx.eps,
-            BLOCK_SIZE=block_size
-        )
-        
-        # Compute gradients for gamma and beta
-        grad_gamma = (grad_output * normed).sum(0)
-        grad_beta = grad_output.sum(0)
-        
-        return grad_input, grad_gamma, grad_beta, None, None
+    def backward(ctx, dy):
+        x, w, b, m, v = ctx.saved_tensors
+        # heuristics for amount of parallel reduction stream for DW/DB
+        N = w.shape[0]
+        GROUP_SIZE_M = 64
+        if N <= 8192: GROUP_SIZE_M = 96
+        if N <= 4096: GROUP_SIZE_M = 128
+        if N <= 1024: GROUP_SIZE_M = 256
+        # allocate output
+        locks = torch.zeros(2 * GROUP_SIZE_M, dtype=torch.int32, device=w.device)
+        _dw = torch.zeros((GROUP_SIZE_M, N), dtype=x.dtype, device=w.device)
+        _db = torch.zeros((GROUP_SIZE_M, N), dtype=x.dtype, device=w.device)
+        dw = torch.empty((N, ), dtype=w.dtype, device=w.device)
+        db = torch.empty((N, ), dtype=w.dtype, device=w.device)
+        dx = torch.empty_like(dy)
+        # enqueue kernel using forward pass heuristics
+        # also compute partial sums for DW and DB
+        x_arg = x.reshape(-1, x.shape[-1])
+        M, N = x_arg.shape
+        _layer_norm_bwd_dx_fused[(M, )](  #
+            dx, dy, _dw, _db, x, w, m, v, locks,  #
+            x_arg.stride(0), N,  #
+            BLOCK_SIZE_N=ctx.BLOCK_SIZE,  #
+            GROUP_SIZE_M=GROUP_SIZE_M,  #
+            num_warps=ctx.num_warps)
+        grid = lambda meta: [triton.cdiv(N, meta['BLOCK_SIZE_N'])]
+        # accumulate partial sums in separate kernel
+        _layer_norm_bwd_dwdb[grid](
+            _dw, _db, dw, db, min(GROUP_SIZE_M, M), N,  #
+            BLOCK_SIZE_M=32,  #
+            BLOCK_SIZE_N=128, num_ctas=1)
+        return dx, None, dw, db, None
+
