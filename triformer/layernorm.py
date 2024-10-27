@@ -30,23 +30,27 @@ def fwd_layernorm_kernel(
   
   # Load inputs
   x = tl.load(input_ptr + row_idx * input_stride_0 + col_offset, mask=row_mask, other=0.).to(tl.float32)
-  gamma = tl.load(gamma_ptr + col_offset, mask=row_mask).to(tl.float32)
-  beta = tl.load(beta_ptr + col_offset, mask=row_mask).to(tl.float32)
+  gamma = tl.load(gamma_ptr + col_offset, mask=row_mask, other=0.).to(tl.float32)
+  beta = tl.load(beta_ptr + col_offset, mask=row_mask, other=0.).to(tl.float32)
   
-  # Numerical stability improvement
-  if stable:
-      row_max = tl.max(tl.where(row_mask, x, float('-inf')), axis=0)
-      x = tl.where(row_mask, x / row_max, 0.)
+  # Numerical stability improvement - always use stable computation
+  row_max = tl.max(tl.where(row_mask, x, float('-inf')), axis=0)
+  x = tl.where(row_mask, x - row_max, 0.)
   
-  # Layer norm computation
-  mean = tl.sum(x, axis=0) / cols
+  # Layer norm computation with careful masking
+  masked_x = tl.where(row_mask, x, 0.)
+  mean = tl.sum(masked_x, axis=0) / cols
   x_centered = tl.where(row_mask, x - mean, 0.)
-  var = tl.sum(x_centered * x_centered, axis=0) / cols
-  inv_std = 1. / tl.sqrt(var + eps)
-  normed = x_centered * inv_std
   
-  # Output computation
-  output = normed * gamma + beta
+  # Variance computation with better numerical stability
+  x_centered_squared = x_centered * x_centered
+  masked_squared = tl.where(row_mask, x_centered_squared, 0.)
+  var = tl.sum(masked_squared, axis=0) / cols
+  inv_std = 1. / tl.sqrt(var + eps)
+  
+  # Normalize and scale
+  normed = x_centered * inv_std
+  output = tl.where(row_mask, normed * gamma + beta, 0.)
   
   # Store results
   output_ptr = output_ptr + row_idx * output_stride_0 + col_offset
@@ -76,21 +80,36 @@ def bwd_layernorm_kernel(
   col_offset = tl.arange(0, BLOCK_SIZE)
   row_mask = col_offset < cols 
   
-  # Load saved values from forward pass
-  dy = tl.load(grad_output_ptr + row_idx * grad_output_stride_0 + col_offset, mask=row_mask, other=0.).to(tl.float32)
-  x_centered = tl.load(mean_centered_ptr + row_idx * grad_output_stride_0 + col_offset, mask=row_mask, other=0.).to(tl.float32)
-  normed = tl.load(normed_ptr + row_idx * grad_output_stride_0 + col_offset, mask=row_mask, other=0.).to(tl.float32)
-  gamma = tl.load(gamma_ptr + col_offset, mask=row_mask).to(tl.float32)
+  # Load saved values from forward pass with careful masking
+  dy = tl.load(grad_output_ptr + row_idx * grad_output_stride_0 + col_offset, 
+               mask=row_mask, other=0.).to(tl.float32)
+  x_centered = tl.load(mean_centered_ptr + row_idx * grad_output_stride_0 + col_offset, 
+                       mask=row_mask, other=0.).to(tl.float32)
+  normed = tl.load(normed_ptr + row_idx * grad_output_stride_0 + col_offset, 
+                    mask=row_mask, other=0.).to(tl.float32)
+  gamma = tl.load(gamma_ptr + col_offset, mask=row_mask, other=0.).to(tl.float32)
   
-  # Compute gradients
-  dy_gamma = dy * gamma
-  var = tl.sum(x_centered * x_centered, axis=0) / cols
+  # Compute gradients with better numerical stability
+  dy_gamma = tl.where(row_mask, dy * gamma, 0.)
+  
+  # Compute variance and inverse standard deviation
+  x_centered_squared = tl.where(row_mask, x_centered * x_centered, 0.)
+  var = tl.sum(x_centered_squared, axis=0) / cols
   inv_std = 1. / tl.sqrt(var + eps)
   
-  grad_input = 1. / cols * inv_std * (
-      cols * dy_gamma - 
-      tl.sum(dy_gamma, axis=0) - 
-      normed * tl.sum(dy_gamma * normed, axis=0)
+  # Compute gradient components
+  sum_dy_gamma = tl.sum(dy_gamma, axis=0)
+  sum_dy_gamma_normed = tl.sum(dy_gamma * normed, axis=0)
+  
+  # Final gradient computation with careful masking
+  grad_input = tl.where(
+      row_mask,
+      1. / cols * inv_std * (
+          cols * dy_gamma - 
+          sum_dy_gamma - 
+          normed * sum_dy_gamma_normed
+      ),
+      0.
   )
   
   # Store gradients
