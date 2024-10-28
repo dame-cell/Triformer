@@ -30,6 +30,83 @@ class TritonMLP(nn.Module):
         x = self.fc3(x)
         return x
 ```
+You can now test out the layer norm and softmax 
+
+```python
+import torch
+import triton
+from triformer import TritonLayerNorm, TritonSoftmax
+
+# Set random seed for reproducibility
+torch.manual_seed(0)
+
+def test_layer_norm_and_softmax():
+    # Test parameters
+    batch_size = 4
+    num_features = 8
+    
+    # Create input data
+    x = torch.randn(batch_size, num_features).cuda()
+    
+    # Test LayerNorm
+    print("Testing LayerNorm...")
+    triton_ln = TritonLayerNorm(num_features).cuda()
+    torch_ln = torch.nn.LayerNorm(num_features).cuda()
+    
+    # Copy parameters from torch to triton layer norm to ensure fair comparison
+    with torch.no_grad():
+        triton_ln.weight.copy_(torch_ln.weight)
+        triton_ln.bias.copy_(torch_ln.bias)
+    
+    triton_ln_out = triton_ln(x)
+    torch_ln_out = torch_ln(x)
+    
+    try:
+        triton.testing.assert_close(
+            triton_ln_out,
+            torch_ln_out,
+            rtol=1e-3,
+            atol=1e-3,
+            err_msg="LayerNorm results don't match!"
+        )
+        print("✓ LayerNorm test passed!")
+    except AssertionError as e:
+        print("✗ LayerNorm test failed:", str(e))
+        print("Max absolute difference:", torch.max(torch.abs(triton_ln_out - torch_ln_out)))
+    
+    # Test Softmax
+    print("\nTesting Softmax...")
+    triton_softmax = TritonSoftmax().cuda()
+    torch_softmax = torch.nn.Softmax(dim=-1).cuda()
+    
+    triton_softmax_out = triton_softmax(x)
+    torch_softmax_out = torch_softmax(x)
+    
+    try:
+        triton.testing.assert_close(
+            triton_softmax_out,
+            torch_softmax_out,
+            rtol=1e-3,
+            atol=1e-3,
+            err_msg="Softmax results don't match!"
+        )
+        print("✓ Softmax test passed!")
+    except AssertionError as e:
+        print("✗ Softmax test failed:", str(e))
+        print("Max absolute difference:", torch.max(torch.abs(triton_softmax_out - torch_softmax_out)))
+
+
+
+if __name__ == "__main__":
+    test_layer_norm_and_softmax()
+
+## output:
+#Testing LayerNorm...
+#✓ LayerNorm test passed!
+
+#Testing Softmax...
+#✓ Softmax test passed!
+```
 
 ### Try it out!
 
