@@ -57,13 +57,13 @@ here are the results:
 | (64, 2048, 4096) | 1.00 GB | 12.14 ms | 82.36 GB/s | 2.00 GB | 2.00 GB | 8.62 ms | 116.02 GB/s | 3.00 GB | 2.00 GB | 1.41x |
 | (128, 2048, 4096) | 2.00 GB | 24.35 ms | 82.15 GB/s | 4.00 GB | 4.00 GB | 17.21 ms | 116.20 GB/s | 6.01 GB | 4.00 GB | 1.41x |
 
-![LayerNorm Performance](Triformer\images\layernorm.png)
+![LayerNorm Performance](triformer/images/layernorm.png)
 
 ### Softmax
 The softmax kernel is also implemented in Triton and it is blazing fast. it was actually more easier than the layer normalization to implement in triton.
 
 
-![Softmax Performance](Triformer/images/softmax.png)
+![Softmax Performance](triformer/images/softmax.png)
 
 
 ## Future Plans - To Do
