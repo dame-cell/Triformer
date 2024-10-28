@@ -43,6 +43,11 @@ You can try out the TritonMLP on CIFAR10 dataset using this Colab notebook:
 
 So, I tried creating my own Layer Normalization kernel with Triton. Turns out, it wasn't as easy as I thought! My version couldn't quite keep up with PyTorch's speed. In the end, I decided to borrow the efficient implementation from the Triton docs.
 
+### Softmax
+The softmax kernel is also implemented in Triton and it is blazing fast. it was actually more easier than the layer normalization to implement in triton.
+
+
+![Softmax Performance](triformer/softmax.png)
 
 
 ## Future Plans - To Do

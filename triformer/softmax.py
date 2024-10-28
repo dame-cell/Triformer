@@ -2,20 +2,23 @@ import torch
 import triton 
 import triton.language as tl 
 
-
-# this is specifically for T4 gpu 
 @triton.autotune(
     configs=[
-        
+        # Smaller sizes
         triton.Config({'BLOCK_SIZE': 64}, num_warps=2),
         triton.Config({'BLOCK_SIZE': 128}, num_warps=2),
         triton.Config({'BLOCK_SIZE': 256}, num_warps=4),
+        # Medium sizes
         triton.Config({'BLOCK_SIZE': 512}, num_warps=4),
+        triton.Config({'BLOCK_SIZE': 512}, num_warps=8),
+        # Large sizes
         triton.Config({'BLOCK_SIZE': 1024}, num_warps=8),
+        triton.Config({'BLOCK_SIZE': 1024}, num_warps=16),
+        # Very large sizes
+        triton.Config({'BLOCK_SIZE': 2048}, num_warps=16),
+        triton.Config({'BLOCK_SIZE': 4096}, num_warps=32),
     ],
     key=['n_cols'],
-    warmup=100,
-    rep=100, 
 )
 @triton.jit
 def fwd_softmax_kernel(
@@ -46,11 +49,63 @@ def fwd_softmax_kernel(
     output_ptrs = output_row_ptr + col_offsets
     tl.store(output_ptrs, output, mask=row_mask)
 
+@triton.autotune(
+    configs=[
+        # Smaller sizes
+        triton.Config({'BLOCK_SIZE': 64}, num_warps=2),
+        triton.Config({'BLOCK_SIZE': 128}, num_warps=2),
+        triton.Config({'BLOCK_SIZE': 256}, num_warps=4),
+        # Medium sizes
+        triton.Config({'BLOCK_SIZE': 512}, num_warps=4),
+        triton.Config({'BLOCK_SIZE': 512}, num_warps=8),
+        # Large sizes
+        triton.Config({'BLOCK_SIZE': 1024}, num_warps=8),
+        triton.Config({'BLOCK_SIZE': 1024}, num_warps=16),
+        # Very large sizes
+        triton.Config({'BLOCK_SIZE': 2048}, num_warps=16),
+        triton.Config({'BLOCK_SIZE': 4096}, num_warps=32),
+    ],
+    key=['n_cols'],
+)
+
+@triton.jit
+def softmax_kernel_backward(
+    output_ptr,
+    input_ptr,
+    grad_ptr,
+    grad_row_stride,
+    input_row_stride,
+    output_row_stride,
+    n_cols,
+    BLOCK_SIZE: tl.constexpr,
+    num_warps: tl.constexpr,
+):
+
+    row_idx = tl.program_id(0)
+
+    row_start_ptr = input_ptr + row_idx * input_row_stride
+    grad_row_start_ptr = grad_ptr + row_idx * grad_row_stride
+
+    col_offsets = tl.arange(0, BLOCK_SIZE)
+    input_ptrs = row_start_ptr + col_offsets
+    grad_ptrs = grad_row_start_ptr + col_offsets
+
+    mask = col_offsets < n_cols
+
+    probs_row = tl.load(input_ptrs, mask = mask, other = 0.)
+    grad_row = tl.load(grad_ptrs, mask = mask, other = 0.)
+
+    dxhat = probs_row * grad_row
+    softmax_grad_output = dxhat - probs_row * tl.sum(dxhat, axis = 0)
+
+    output_row_start_ptr = output_ptr + row_idx * output_row_stride
+    output_ptrs = output_row_start_ptr + col_offsets
+    tl.store(output_ptrs, softmax_grad_output, mask = mask)
+    
 class TritonsoftmaxFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x):
         rows, cols = x.shape
-        assert x.dim() == 2, "only supports 2D tensors"
         output = torch.empty_like(x)
         grid = (rows,)
         fwd_softmax_kernel[grid](
@@ -59,6 +114,31 @@ class TritonsoftmaxFunction(torch.autograd.Function):
             x.stride(0),
             cols,
         )
+        ctx.save_for_backward(output)  # Save output for backward pass
         return output
-      
-      
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        output, = ctx.saved_tensors
+        rows, cols = grad_output.shape
+        grad_input = torch.empty_like(grad_output)
+        grid = (rows,)
+        
+        softmax_kernel_backward[grid](
+            grad_input,  # output gradient
+            output,      # saved forward output
+            grad_output, # incoming gradient
+            grad_output.stride(0),
+            output.stride(0),
+            grad_input.stride(0),
+            cols,
+        )
+        return grad_input
+
+# Wrapper class for easier use
+class TritonSoftmax(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+    
+    def forward(self, x):
+        return TritonsoftmaxFunction.apply(x)
