@@ -3,10 +3,10 @@ from setuptools import setup, find_packages
 setup(
   name = 'triformer',
   packages = find_packages(),
-  version = '1.1.0',
+  version = '1.1.1',
   license='MIT',
   description = 'Transformer components in Triton',
-  long_description=open('README.md').read(),
+  long_description='This package implements transformer components in Triton.',
   long_description_content_type='text/markdown',
   author = 'Dame rajee',
   author_email = 'doss72180@gmail.com',
