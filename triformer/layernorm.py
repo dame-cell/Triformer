@@ -1,7 +1,8 @@
-# copied from https://triton-lang.org/main/getting-started/tutorials/05-layer-norm.html
 import torch
+
 import triton
 import triton.language as tl
+
 
 @triton.jit
 def _layer_norm_fwd_fused(
@@ -20,7 +21,6 @@ def _layer_norm_fwd_fused(
     row = tl.program_id(0)
     Y += row * stride
     X += row * stride
-    
     # Compute mean
     mean = 0
     _mean = tl.zeros([BLOCK_SIZE], dtype=tl.float32)
@@ -29,7 +29,6 @@ def _layer_norm_fwd_fused(
         a = tl.load(X + cols, mask=cols < N, other=0.).to(tl.float32)
         _mean += a
     mean = tl.sum(_mean, axis=0) / N
-    
     # Compute variance
     _var = tl.zeros([BLOCK_SIZE], dtype=tl.float32)
     for off in range(0, N, BLOCK_SIZE):
@@ -39,11 +38,9 @@ def _layer_norm_fwd_fused(
         _var += x * x
     var = tl.sum(_var, axis=0) / N
     rstd = 1 / tl.sqrt(var + eps)
-    
     # Write mean / rstd
     tl.store(Mean + row, mean)
     tl.store(Rstd + row, rstd)
-    
     # Normalize and apply linear transformation
     for off in range(0, N, BLOCK_SIZE):
         cols = off + tl.arange(0, BLOCK_SIZE)
@@ -142,7 +139,7 @@ def _layer_norm_bwd_dwdb(DW,  # pointer to the partial sum of weights gradient
     sum_db = tl.sum(db, axis=0)
     tl.store(FINAL_DW + cols, sum_dw, mask=cols < N)
     tl.store(FINAL_DB + cols, sum_db, mask=cols < N)
-    
+
 class LayerNormFunction(torch.autograd.Function):
 
     @staticmethod
@@ -205,10 +202,17 @@ class LayerNormFunction(torch.autograd.Function):
             BLOCK_SIZE_M=32,  #
             BLOCK_SIZE_N=128, num_ctas=1)
         return dx, None, dw, db, None
-
-
-
-def layer_norm(x, weight, bias, eps=1e-5):
-
-    return LayerNormFunction.apply(x, weight, bias, eps)
+    
+class TritonLayerNorm(torch.nn.Module):
+    def __init__(self, normalized_shape, eps=1e-5, elementwise_affine=True):
+        super().__init__()
+        self.normalized_shape = normalized_shape
+        self.eps = eps
+        self.elementwise_affine = elementwise_affine
+        if self.elementwise_affine:
+            self.weight = torch.nn.Parameter(torch.Tensor(normalized_shape))
+            self.bias = torch.nn.Parameter(torch.Tensor(normalized_shape))
+    
+    def forward(self, x):
+        return LayerNormFunction.apply(x, self.normalized_shape, self.weight, self.bias, self.eps)
 
