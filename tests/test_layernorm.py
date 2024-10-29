@@ -15,7 +15,7 @@ from triformer.layernorm import TritonLayerNorm
     (16, 1024, 1024),
     (32, 512, 1024),
 ])
-
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 class TestLayerNorm:
     def test_forward_match(self, batch_size, seq_len, hidden_size):
         # Setup
@@ -43,7 +43,6 @@ class TestLayerNorm:
             atol=1e-0,
             err_msg="LayerNorm forward pass results don't match!"
         )
-
     def test_backward_match(self, batch_size, seq_len, hidden_size):
         # Setup
         torch.manual_seed(42)
