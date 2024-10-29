@@ -58,24 +58,24 @@ class TestLayerNorm:
         torch_output.backward(grad_output)
         
         
-        print("triton_ln.weight.grad", triton_ln.weight.grad[0:3])
-        print("torch_ln.weight.grad", torch_ln.weight.grad[0:3])
+        print("triton_ln.weight.grad", triton_ln.weight.grad[0:10])
+        print("torch_ln.weight.grad", torch_ln.weight.grad[0:10])
         # Assert gradients match
         triton.testing.assert_close(
             triton_ln.weight.grad,
             torch_ln.weight.grad,
-            rtol=1e-1,
-            atol=1e-1,
+            rtol=1e-2,
+            atol=1e-2,
             err_msg="LayerNorm weight gradients don't match!"
         )
         
-        print("triton_ln.bias.grad", triton_ln.bias.grad[0:3])
-        print("torch_ln.bias.grad", torch_ln.bias.grad[0:3])
+        print("triton_ln.bias.grad", triton_ln.bias.grad[0:10])
+        print("torch_ln.bias.grad", torch_ln.bias.grad[0:10])
         triton.testing.assert_close(
             triton_ln.bias.grad,
             torch_ln.bias.grad,
-            rtol=1e-1,
-            atol=1e-1,
+            rtol=1e-2,
+            atol=1e-2,
             err_msg="LayerNorm bias gradients don't match!"
         )
 
