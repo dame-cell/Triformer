@@ -2,6 +2,7 @@ import torch
 import torch.nn.functional as F
 import triton
 import triton.language as tl
+from utils import calc_num_warps
 @triton.jit
 def softmax_kernel_forward(
     output_ptr,
