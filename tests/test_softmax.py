@@ -1,7 +1,7 @@
 import torch
 import triton
 import pytest
-from triformer import TritonSoftmax
+from triformer.softmax import TritonSoftmax
 
 class TestSoftmax:
     @pytest.mark.parametrize(
