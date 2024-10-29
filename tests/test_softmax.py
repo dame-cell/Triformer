@@ -29,7 +29,7 @@ class TestSoftmax:
             with torch.no_grad():
                 triton_output = triton_softmax(x)
                 # For causal comparison, we need to apply mask to torch softmax
-                if causal:
+                if causal:  
                     mask = torch.triu(torch.ones(seq_len, seq_len), diagonal=1).bool().cuda()
                     x_masked = x.masked_fill(mask, float('-inf'))
                     torch_output = torch.nn.functional.softmax(x_masked, dim=-1)
