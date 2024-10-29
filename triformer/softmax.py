@@ -135,10 +135,8 @@ class TritonsoftmaxFunction(torch.autograd.Function):
         )
         return grad_input
 
-# Wrapper class for easier use
-class TritonSoftmax(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
+triton_softmax = TritonsoftmaxFunction.apply
+
+def softmax(x):
     
-    def forward(self, x):
-        return TritonsoftmaxFunction.apply(x)
+    return triton_softmax(x)
