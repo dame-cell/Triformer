@@ -1,10 +1,7 @@
-
 import torch
 import torch.nn.functional as F
-
 import triton
 import triton.language as tl
-from utils import calc_num_warps
 
 @triton.jit
 def softmax_kernel_forward(
@@ -14,33 +11,29 @@ def softmax_kernel_forward(
     output_row_stride,
     n_cols,
     causal,
-    **meta
+    BLOCK_SIZE: tl.constexpr,  # Add constexpr here
+    num_warps: tl.constexpr    # Add constexpr here
 ):
     row_idx = tl.program_id(0)
-    BLOCK_SIZE = meta['BLOCK_SIZE']
-
     row_start_ptr = input_ptr + row_idx * input_row_stride
-
     col_offsets = tl.arange(0, BLOCK_SIZE)
     input_ptrs = row_start_ptr + col_offsets
-
     mask = col_offsets < n_cols
 
-    row = tl.load(input_ptrs, mask = mask, other = -float('inf'))
+    row = tl.load(input_ptrs, mask=mask, other=-float('inf'))
 
     if causal:
         causal_mask = col_offsets > (row_idx % n_cols)
         row = row + tl.where(causal_mask, -float('inf'), 0.)
 
     row_minus_max = row - tl.max(row, axis=0)
-
     numerator = tl.exp(row_minus_max)
     denominator = tl.sum(numerator, axis=0)
     softmax_output = numerator / denominator
 
     output_row_start_ptr = output_ptr + row_idx * output_row_stride
     output_ptrs = output_row_start_ptr + col_offsets
-    tl.store(output_ptrs, softmax_output, mask = mask)
+    tl.store(output_ptrs, softmax_output, mask=mask)
 
 @triton.jit
 def softmax_kernel_backward(
@@ -51,11 +44,10 @@ def softmax_kernel_backward(
     input_row_stride,
     output_row_stride,
     n_cols,
-    **meta
+    BLOCK_SIZE: tl.constexpr,  # Add constexpr here
+    num_warps: tl.constexpr    # Add constexpr here
 ):
     row_idx = tl.program_id(0)
-    BLOCK_SIZE = meta['BLOCK_SIZE']
-
     row_start_ptr = input_ptr + row_idx * input_row_stride
     grad_row_start_ptr = grad_ptr + row_idx * grad_row_stride
 
@@ -65,15 +57,15 @@ def softmax_kernel_backward(
 
     mask = col_offsets < n_cols
 
-    probs_row = tl.load(input_ptrs, mask = mask, other = 0.)
-    grad_row = tl.load(grad_ptrs, mask = mask, other = 0.)
+    probs_row = tl.load(input_ptrs, mask=mask, other=0.)
+    grad_row = tl.load(grad_ptrs, mask=mask, other=0.)
 
     dxhat = probs_row * grad_row
-    softmax_grad_output = dxhat - probs_row * tl.sum(dxhat, axis = 0)
+    softmax_grad_output = dxhat - probs_row * tl.sum(dxhat, axis=0)
 
     output_row_start_ptr = output_ptr + row_idx * output_row_stride
     output_ptrs = output_row_start_ptr + col_offsets
-    tl.store(output_ptrs, softmax_grad_output, mask = mask)
+    tl.store(output_ptrs, softmax_grad_output, mask=mask)
 
 class _softmax(torch.autograd.Function):
     @classmethod
@@ -94,8 +86,8 @@ class _softmax(torch.autograd.Function):
             y.stride(0),
             n_cols,
             causal,
-            num_warps = num_warps,
-            BLOCK_SIZE = BLOCK_SIZE,
+            BLOCK_SIZE,
+            num_warps
         )
 
         if x.requires_grad:
@@ -123,14 +115,13 @@ class _softmax(torch.autograd.Function):
             probs.stride(0),
             dx.stride(0),
             n_cols,
-            num_warps = num_warps,
-            BLOCK_SIZE = BLOCK_SIZE
+            BLOCK_SIZE,
+            num_warps
         )
 
         return dx.view(*shape), None
 
 triton_softmax = _softmax.apply
-
 
 class TritonSoftmax(torch.nn.Module):
     def __init__(self, causal=False):
