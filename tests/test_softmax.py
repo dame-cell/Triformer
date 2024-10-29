@@ -46,7 +46,8 @@ class TestSoftmax:
         grad_output = torch.randn_like(x)
         
         # Forward + backward pass
-        triton_output = TritonSoftmax()(x)
+        triton_sft = TritonSoftmax()
+        triton_output = triton_sft(x)
         torch_output = torch.nn.functional.softmax(x_clone, dim=-1)
         
         triton_output.backward(grad_output)

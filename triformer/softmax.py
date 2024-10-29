@@ -22,40 +22,36 @@ import triton.language as tl
 )
 @triton.jit
 def fwd_softmax_kernel(
-    input_ptr, 
     output_ptr,
-    stride,
+    input_ptr,
+    input_row_stride,
+    output_row_stride,
     n_cols,
     BLOCK_SIZE: tl.constexpr,
-    num_warps: tl.constexpr,
 ):
-    # Get row index and offsets
-    row_idx = tl.program_id(axis=0)
-    col_offsets = tl.arange(0, BLOCK_SIZE)
-    row_mask = col_offsets < n_cols
+    # Get row index
+    row_idx = tl.program_id(0)
     
-    # Compute input pointers
-    row_start_ptr = input_ptr + row_idx * stride
+    # Setup pointers and offsets
+    row_start_ptr = input_ptr + row_idx * input_row_stride
+    col_offsets = tl.arange(0, BLOCK_SIZE)
     input_ptrs = row_start_ptr + col_offsets
     
-    # Load input row with proper masking
-    row = tl.load(input_ptrs, mask=row_mask, other=-float('inf'))
+    # Load with masking
+    mask = col_offsets < n_cols
+    row = tl.load(input_ptrs, mask=mask, other=-float('inf'))
     
-    # Compute max for numerical stability (crucial fix)
-    row_max = tl.max(row, axis=0)
-    
-    # Subtract max and compute exp (for stability)
-    row = row - row_max
-    numerator = tl.exp(row)
-    
-    # Compute sum with proper masking
+    # Compute softmax with numerical stability
+    row_minus_max = row - tl.max(row, axis=0)
+    numerator = tl.exp(row_minus_max)
     denominator = tl.sum(numerator, axis=0)
+    softmax_output = numerator / denominator
     
-    # Normalize and store
-    output = numerator / (denominator + 1e-6)  # Add epsilon for stability
-    output_row_start_ptr = output_ptr + row_idx * stride
+    # Store result
+    output_row_start_ptr = output_ptr + row_idx * output_row_stride
     output_ptrs = output_row_start_ptr + col_offsets
-    tl.store(output_ptrs, output, mask=row_mask)
+    tl.store(output_ptrs, softmax_output, mask=mask)
+
 
 @triton.autotune(
     configs=[
@@ -118,9 +114,9 @@ class TritonsoftmaxFunction(torch.autograd.Function):
             output,
             x.stride(0),
             cols,
+            BLOCK_SIZE=min(triton.next_power_of_2(cols), 4096),
         )
-        ctx.save_for_backward(output)  # Save output for backward pass
-        return output
+        ctx.save_for_backward(output) 
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -137,15 +133,18 @@ class TritonsoftmaxFunction(torch.autograd.Function):
             output.stride(0),
             grad_input.stride(0),
             cols,
+            BLOCK_SIZE=min(triton.next_power_of_2(cols), 4096),
+            num_warps=2,
         )
         return grad_input
 
 triton_softmax = TritonsoftmaxFunction.apply
-
+# TO DO : implement causal softmax
 class TritonSoftmax(torch.nn.Module):
-    def __init__(self, dim=-1):
+    def __init__(self, dim=-1, causal=False):
         super().__init__()
-        self.dim = dim  
-        
+        self.dim = dim
+        self.causal = causal
+    
     def forward(self, x):
-        return triton_softmax(x)
+        return triton_softmax(x, self.causal)
