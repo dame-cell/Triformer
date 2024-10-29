@@ -90,8 +90,8 @@ class TestLayerNorm:
             msg="LayerNorm input gradients don't match!"
         )
 
-    @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
-    def test_numerical_stability(self):
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+def test_numerical_stability(self):
         # Test numerical stability with extreme values
         x = torch.tensor([[-1e10, 0, 1e10]], device='cuda')
         triton_ln = TritonLayerNorm(x.shape[-1]).cuda()
@@ -104,8 +104,8 @@ class TestLayerNorm:
         # Mean should be close to 0
         assert torch.allclose(output.mean(dim=-1), torch.zeros_like(output.mean(dim=-1)))
 
-    @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
-    def test_memory_efficiency(self):
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+def test_memory_efficiency(self):
         # Test memory efficiency with large inputs
         shape = (32, 32, 1024)  # Typical transformer sequence length
         x = torch.randn(*shape, device='cuda')
