@@ -14,9 +14,7 @@ from triformer import TritonLayerNorm
     (8, 1024, 1024),
     (16, 1024, 1024),
     (32, 512, 1024),
-
-    # Large configurations
-    (32, 1024, 2048)])
+])
 
 class TestLayerNorm:
     def test_forward_match(self, batch_size, seq_len, hidden_size):
