@@ -49,7 +49,7 @@ The softmax kernel is also implemented in Triton and it is blazing fast. it was 
 - [ ] Create a library specifically for transformers in vision and language
 - [x] Implement the layernorm in Triton 
 - [x] Implement the softmax in Triton 
-- [ ] add test for each and every component
+- [x] add test for each and every component
 - [ ] Make the TritonLinear more flexible to either use relu or not
 - [ ] Fuse the kernels of TritonLinear to see if it speeds up the training process 
 
