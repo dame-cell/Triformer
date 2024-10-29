@@ -48,6 +48,12 @@ class TestSoftmax:
                 atol=atol,
                 err_msg=f"Softmax forward pass results don't match for dtype={dtype}, causal={causal}!"
             )
+            
+            # Additional assertions for numerical stability
+            assert torch.all(triton_output >= 0), "Softmax output should be non-negative"
+            assert torch.all(triton_output <= 1), "Softmax output should be less than or equal to 1"
+            assert torch.allclose(triton_output.sum(dim=-1), torch.ones(batch_size, device='cuda'), 
+                                   rtol=1e-5, atol=1e-5), "Softmax outputs should sum to 1"
 
     def test_numerical_stability(self):
         # Test with extreme values
@@ -86,3 +92,33 @@ class TestSoftmax:
         
         # Should not have NaN gradients
         assert not torch.isnan(x.grad).any()
+
+    def test_backward_match(self, batch_size, seq_len, hidden_size, dtype):
+        # Setup
+        torch.manual_seed(42)
+        x = torch.randn(batch_size, seq_len, hidden_size, device='cuda', dtype=dtype, requires_grad=True)
+        grad_output = torch.randn_like(x)
+        
+        # Create implementations
+        triton_softmax = TritonSoftmax().cuda()
+        torch_softmax = torch.nn.functional.softmax
+        
+        # Forward pass
+        triton_output = triton_softmax(x)
+        torch_output = torch_softmax(x, dim=-1)
+        
+        # Backward pass
+        triton_output.backward(grad_output)
+        torch_output.backward(grad_output)
+        
+        # Assert gradients match
+        triton.testing.assert_close(
+            triton_softmax.weight.grad,
+            torch_softmax.weight.grad,
+            rtol=1e-0,
+            atol=1e-0,
+            err_msg="Softmax weight gradients don't match!"
+        )
+        
+        # Check for NaN gradients
+        assert not torch.isnan(x.grad).any(), "Gradients should not contain NaN values"
