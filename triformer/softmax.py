@@ -137,6 +137,6 @@ class TritonsoftmaxFunction(torch.autograd.Function):
 
 triton_softmax = TritonsoftmaxFunction.apply
 
-def softmax(x):
+def TritonSoftmax(x):
     
     return triton_softmax(x)
