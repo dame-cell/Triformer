@@ -1,5 +1,6 @@
 import torch
 import pytest
+import triton
 from triformer import TritonLayerNorm
 
 @pytest.mark.parametrize("batch_size,seq_len,hidden_size", [
@@ -27,7 +28,13 @@ class TestLayerNorm:
             torch_output = torch_ln(x)
         
         # Assert
-        assert torch.allclose(triton_output, torch_output, rtol=1e-3, atol=1e-3)
+        triton.testing.assert_close(
+            triton_output,
+            torch_output,
+            rtol=1e-3,
+            atol=1e-3,
+            err_msg="LayerNorm forward pass results don't match!"
+        )
 
     def test_backward_match(self, batch_size, seq_len, hidden_size):
         # Setup
@@ -51,8 +58,20 @@ class TestLayerNorm:
         torch_output.backward(grad_output)
         
         # Assert gradients match
-        assert torch.allclose(triton_ln.weight.grad, torch_ln.weight.grad, rtol=1e-3, atol=1e-3)
-        assert torch.allclose(triton_ln.bias.grad, torch_ln.bias.grad, rtol=1e-3, atol=1e-3)
+        triton.testing.assert_close(
+            triton_ln.weight.grad,
+            torch_ln.weight.grad,
+            rtol=1e-3,
+            atol=1e-3,
+            err_msg="LayerNorm weight gradients don't match!"
+        )
+        triton.testing.assert_close(
+            triton_ln.bias.grad,
+            torch_ln.bias.grad,
+            rtol=1e-3,
+            atol=1e-3,
+            err_msg="LayerNorm bias gradients don't match!"
+        )
 
 def test_layernorm_training():
     # Setup
@@ -110,8 +129,8 @@ def test_layernorm_training():
         torch_losses.append(torch_loss.item())
     
     # Assert both models are learning
-    assert triton_losses[-1] < triton_losses[0]
-    assert torch_losses[-1] < torch_losses[0]
+    assert triton_losses[-1] < triton_losses[0], "Triton model is not learning"
+    assert torch_losses[-1] < torch_losses[0], "PyTorch model is not learning"
     
     # Assert similar convergence
-    assert abs(triton_losses[-1] - torch_losses[-1]) < 0.1 
+    assert abs(triton_losses[-1] - torch_losses[-1]) < 0.1, "Models did not converge to similar solutions"

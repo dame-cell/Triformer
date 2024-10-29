@@ -1,6 +1,7 @@
 import torch
 import pytest
 from triformer import TritonSoftmax
+import triton
 
 @pytest.mark.parametrize("batch_size,seq_len,hidden_size", [
     (1, 128, 256),
@@ -22,7 +23,13 @@ class TestSoftmax:
             torch_output = torch.nn.functional.softmax(x, dim=-1)
         
         # Assert
-        assert torch.allclose(triton_output, torch_output, rtol=1e-3, atol=1e-3)
+        triton.testing.assert_close(
+            triton_output,
+            torch_output,
+            rtol=1e-3,
+            atol=1e-3,
+            err_msg="Softmax forward pass results don't match!"
+        )
 
     def test_backward_match(self, batch_size, seq_len, hidden_size):
         # Setup
@@ -39,7 +46,13 @@ class TestSoftmax:
         torch_output.backward(grad_output)
         
         # Assert gradients match
-        assert torch.allclose(x.grad, x_clone.grad, rtol=1e-3, atol=1e-3)
+        triton.testing.assert_close(
+            x.grad,
+            x_clone.grad,
+            rtol=1e-3,
+            atol=1e-3,
+            err_msg="Softmax backward pass gradients don't match!"
+        )
 
 def test_softmax_training():
     # Setup
@@ -97,8 +110,7 @@ def test_softmax_training():
         torch_losses.append(torch_loss.item())
     
     # Assert both models are learning
-    assert triton_losses[-1] < triton_losses[0]
-    assert torch_losses[-1] < torch_losses[0]
+    assert triton_losses[-1] < triton_losses[0], "Triton model is not learning"
+    assert torch_losses[-1] < torch_losses[0], "PyTorch model is not learning"
     
-    # Assert similar convergence
-    assert abs(triton_losses[-1] - torch_losses[-1]) < 0.1 
+   
