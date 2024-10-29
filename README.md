@@ -20,9 +20,14 @@ from triformer import TritonLinear, TritonLayerNorm, TritonSoftmax
 
 ### Layer Normalization
 
-The layer normalization in the triton docs is very fast but when i tested it had some problems first of all the vlaues were not stable so I had to use my own benchmark to test it. 
+The layer normalization backwards and forward throughputs are higher than the pytorch layer normalization.
+- benchmark was done on the L40s GPU 
+| Forward | Backward |
+|---------|----------|
+| ![LayerNorm Performance](triformer/images/layernorm_forward.png) | ![LayerNorm Performance](triformer/images/layernorm_backward.png) |
 
-![LayerNorm Performance](triformer/images/layernorm.png)
+
+
 
 ### Softmax
 The softmax kernel is also implemented in Triton and it is blazing fast. it was actually more easier than the layer normalization to implement in triton.
