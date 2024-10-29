@@ -2,14 +2,7 @@ import torch
 import pytest
 import numpy as np
 from torch.nn.functional import softmax
-
-class TritonSoftmax(torch.nn.Module):
-    def __init__(self, causal=False):
-        super().__init__()
-        self.causal = causal
-
-    def forward(self, x):
-        return softmax(x, dim=-1)
+from triformer.softmax import TritonSoftmax
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_softmax_forward():
