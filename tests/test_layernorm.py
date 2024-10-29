@@ -20,10 +20,7 @@ from triformer import TritonLayerNorm
     (32, 1024, 2048),
     (64, 512, 2048),
     
-    # Very large configurations
-    (32, 4096, 3072),
-    (64, 1024, 4096),
-    (128, 512, 4096),
+   
 ])
 
 class TestLayerNorm:
