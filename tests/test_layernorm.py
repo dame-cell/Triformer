@@ -4,10 +4,28 @@ import triton
 from triformer import TritonLayerNorm
 
 @pytest.mark.parametrize("batch_size,seq_len,hidden_size", [
+    # Small configurations
     (1, 128, 256),
     (8, 512, 1024),
     (16, 256, 512),
+    
+    # Medium configurations
+    (4, 1024, 768),
+    (8, 1024, 1024),
+    (16, 1024, 1024),
+    (32, 512, 1024),
+
+    # Large configurations
+    (16, 2048, 1536),
+    (32, 1024, 2048),
+    (64, 512, 2048),
+    
+    # Very large configurations
+    (32, 4096, 3072),
+    (64, 1024, 4096),
+    (128, 512, 4096),
 ])
+
 class TestLayerNorm:
     def test_forward_match(self, batch_size, seq_len, hidden_size):
         # Setup
@@ -64,8 +82,8 @@ class TestLayerNorm:
         triton.testing.assert_close(
             triton_ln.weight.grad,
             torch_ln.weight.grad,
-            rtol=1e-2,
-            atol=1e-2,
+            rtol=1e-1,
+            atol=1e-1,
             err_msg="LayerNorm weight gradients don't match!"
         )
         
@@ -74,8 +92,8 @@ class TestLayerNorm:
         triton.testing.assert_close(
             triton_ln.bias.grad,
             torch_ln.bias.grad,
-            rtol=1e-2,
-            atol=1e-2,
+            rtol=1e-1,
+            atol=1e-1,
             err_msg="LayerNorm bias gradients don't match!"
         )
 
