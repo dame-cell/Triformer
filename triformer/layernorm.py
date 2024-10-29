@@ -202,7 +202,8 @@ class LayerNormFunction(torch.autograd.Function):
             BLOCK_SIZE_M=32,  #
             BLOCK_SIZE_N=128, num_ctas=1)
         return dx, None, dw, db, None
-    
+
+#make it easier to use with pytorch
 class TritonLayerNorm(torch.nn.Module):
     def __init__(self, normalized_shape, eps=1e-5, elementwise_affine=True):
         super().__init__()
@@ -210,9 +211,22 @@ class TritonLayerNorm(torch.nn.Module):
         self.eps = eps
         self.elementwise_affine = elementwise_affine
         if self.elementwise_affine:
-            self.weight = torch.nn.Parameter(torch.Tensor(normalized_shape))
-            self.bias = torch.nn.Parameter(torch.Tensor(normalized_shape))
+            self.weight = torch.nn.Parameter(torch.ones(normalized_shape))  
+            self.bias = torch.nn.Parameter(torch.zeros(normalized_shape))   
+        else:
+            self.register_parameter('weight', None)
+            self.register_parameter('bias', None)
+    
+    def reset_parameters(self):
+        if self.elementwise_affine:
+            torch.nn.init.ones_(self.weight)
+            torch.nn.init.zeros_(self.bias)
     
     def forward(self, x):
-        return LayerNormFunction.apply(x, self.normalized_shape, self.weight, self.bias, self.eps)
-
+        if self.elementwise_affine:
+            return LayerNormFunction.apply(x, self.normalized_shape, self.weight, self.bias, self.eps)
+        else:
+            return LayerNormFunction.apply(x, self.normalized_shape, 
+                                         torch.ones(self.normalized_shape, device=x.device),
+                                         torch.zeros(self.normalized_shape, device=x.device),
+                                         self.eps)
