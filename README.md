@@ -17,13 +17,16 @@ pip install triformer==2.1.4
 ```python
 from triformer import TritonLinear, TritonLayerNorm, TritonSoftmax
 ```
+# Benchmarking 
+The benchmarking was done on the L40s GPU 
 
 ### Layer Normalization
 
 The layer normalization backwards and forward throughputs are higher than the pytorch layer normalization.
-| Forward | Backward |
-|---------|----------|
-| ![LayerNorm Forward Performance](triformer/images/layernorm_forward.png) | ![LayerNorm Backward Performance](triformer/images/layernorm_backward.png) |
+
+| Forward | Backward | Combined |
+|---------|----------|----------|
+| ![LayerNorm Forward Performance](triformer/images/layernorm_forward.png) | ![LayerNorm Backward Performance](triformer/images/layernorm_backward.png) | ![LayerNorm Combined Performance](triformer/images/layer-norm-combined.png) |
 
 
 
@@ -32,7 +35,9 @@ The layer normalization backwards and forward throughputs are higher than the py
 The softmax kernel is also implemented in Triton and it is blazing fast. it was actually more easier than the layer normalization to implement in triton.
 
 
-![Softmax Performance](triformer/images/softmax.png)
+| Forward | Backward | Combined |
+|---------|----------|----------|
+| ![Softmax Forward Performance](triformer/images/softmax-forward.png) | ![Softmax Backward Performance](triformer/images/softmax-backward.png) | ![Softmax Combined Performance](triformer/images/softmax-combined.png) |
 
 ## Test for each components 
 -  Layernorm test has been addded, when testing the layernorm the weights and biases were not quite similar to torch but there was a bit of difference in the values.So i had to use  `rtol=1e-0`, `atol=1e-0` to pass the test.
