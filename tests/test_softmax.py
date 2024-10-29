@@ -23,7 +23,7 @@ class TestSoftmax:
         # Test both regular and causal softmax
         for causal in [False, True]:
             # Create implementations
-            triton_softmax = TritonSoftmax(dim=-1, causal=causal).cuda()
+            triton_softmax = TritonSoftmax(causal=causal).cuda()
             
             # Forward pass
             with torch.no_grad():
@@ -57,7 +57,7 @@ class TestSoftmax:
             torch.tensor([[0., 0., 0.]], device='cuda'),
         ]
         
-        triton_softmax = TritonSoftmax(dim=-1).cuda()
+        triton_softmax = TritonSoftmax().cuda()
         
         for x in test_cases:
             triton_output = triton_softmax(x)
@@ -78,7 +78,7 @@ class TestSoftmax:
     def test_backward_pass(self):
         # Test gradient computation
         x = torch.randn(2, 3, requires_grad=True, device='cuda')
-        triton_softmax = TritonSoftmax(dim=-1).cuda()
+        triton_softmax = TritonSoftmax().cuda()
         
         out = triton_softmax(x)
         loss = out.sum()
