@@ -134,9 +134,8 @@ triton_softmax = _softmax.apply
 triton_softmax = _softmax.apply
 
 class TritonSoftmax(torch.nn.Module):
-    def __init__(self, dim=-1, causal=False):
+    def __init__(self, causal=False):
         super().__init__()
-        self.dim = dim
         self.causal = causal
         
     def forward(self, x):
