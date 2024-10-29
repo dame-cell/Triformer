@@ -22,20 +22,6 @@ from triformer import TritonLinear, TritonLayerNorm, TritonSoftmax
 
 The layer normalization in the triton docs is very fast but when i tested it had some problems first of all the vlaues were not stable so I had to use my own benchmark to test it. 
 
-here are the results:
-
-| Shape | Torch GB/s | Triton GB/s |
-|-------|------------|-------------|
-| (32, 512, 1024) | 57.70 GB/s | 89.58 GB/s |
-| (32, 1024, 1024) | 73.04 GB/s | 115.53 GB/s |
-| (64, 512, 1024) | 91.47 GB/s | 115.85 GB/s |
-| (32, 1024, 2048) | 102.51 GB/s | 116.50 GB/s |
-| (64, 1024, 2048) | 97.83 GB/s | 116.77 GB/s |
-| (128, 1024, 2048) | 97.52 GB/s | 116.99 GB/s |
-| (32, 2048, 4096) | 82.71 GB/s | 115.87 GB/s |
-| (64, 2048, 4096) | 82.36 GB/s | 116.02 GB/s |
-| (128, 2048, 4096) | 82.15 GB/s | 116.20 GB/s |
-
 ![LayerNorm Performance](triformer/images/layernorm.png)
 
 ### Softmax
