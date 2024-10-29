@@ -69,7 +69,7 @@ def softmax_kernel_backward(
 
 class SoftmaxFunction(torch.autograd.Function):
     @classmethod
-    def forward(self, ctx, x, causal):
+    def forward(ctx, x, causal):
         shape = x.shape
         x = x.view(-1, shape[-1])
         n_rows, n_cols = x.shape
@@ -95,7 +95,7 @@ class SoftmaxFunction(torch.autograd.Function):
         return y.view(*shape)
 
     @classmethod
-    def backward(self, ctx, grad_probs):
+    def backward(ctx, grad_probs):
         shape = grad_probs.shape
         probs, = ctx.saved_tensors
 
@@ -124,9 +124,10 @@ class SoftmaxFunction(torch.autograd.Function):
 
 
 class TritonSoftmax(torch.nn.Module):
-    def __init__(self, causal:bool):
+    def __init__(self, x, causal):
         super().__init__()
         self.causal = causal
+  
         
     def forward(self, x):
-        return SoftmaxFunction.apply(x, self.causal)
+        return SoftmaxFunction.apply(x=x, causal=self.causal)
