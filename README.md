@@ -8,7 +8,7 @@ This will be an implementation of  transformers using triton,
 ### Installation 
 - First install triformer 
 ```bash
-pip install triformer
+pip install triformer==2.1.4
 ```
 - Then you can use the components 
 - please keep in mind that the TritonLinear is a fused with relu

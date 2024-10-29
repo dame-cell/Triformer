@@ -2,7 +2,7 @@ import torch
 import pytest
 import numpy as np
 from torch.nn.functional import softmax
-from triformer.softmax import TritonSoftmax
+from triformer import TritonSoftmax
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_softmax_forward():
