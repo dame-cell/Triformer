@@ -91,7 +91,7 @@ class TestLayerNorm:
         )
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
-def test_numerical_stability(self):
+def test_numerical_stability():
         # Test numerical stability with extreme values
         x = torch.tensor([[-1e10, 0, 1e10]], device='cuda')
         triton_ln = TritonLayerNorm(x.shape[-1]).cuda()
@@ -105,7 +105,7 @@ def test_numerical_stability(self):
         assert torch.allclose(output.mean(dim=-1), torch.zeros_like(output.mean(dim=-1)))
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
-def test_memory_efficiency(self):
+def test_memory_efficiency():
         # Test memory efficiency with large inputs
         shape = (32, 32, 1024)  # Typical transformer sequence length
         x = torch.randn(*shape, device='cuda')
