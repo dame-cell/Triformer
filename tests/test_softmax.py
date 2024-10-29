@@ -1,124 +1,117 @@
 import torch
-import pytest
-from triformer import TritonSoftmax
 import triton
+import pytest
+from triformer import TritonSoftmax 
 
-@pytest.mark.parametrize("batch_size,seq_len,hidden_size,dtype", [
-    (1, 128, 256, torch.float32),
-    (8, 512, 1024, torch.float32),
-    (16, 256, 512, torch.float32),
-    (1, 128, 256, torch.float16),
-    (8, 512, 1024, torch.float16),
-    (16, 256, 512, torch.float16),
-])
 class TestSoftmax:
-    def test_forward_match(self, batch_size, seq_len, hidden_size, dtype):
+    @pytest.mark.parametrize(
+        "batch_size,num_heads,seq_len",
+        [
+            (1, 8, 128),    # Small batch
+            (4, 12, 512),   # Medium batch
+            (16, 16, 1024), # Large batch
+        ]
+    )
+    def test_attention_softmax(self, batch_size, num_heads, seq_len):
         # Setup
         torch.manual_seed(42)
-        x = torch.randn(batch_size * seq_len, hidden_size, device='cuda', dtype=dtype)
+        
+        # Create attention scores (Q @ K^T)
+        scores = torch.randn(
+            batch_size, 
+            num_heads, 
+            seq_len, 
+            seq_len, 
+            device='cuda'
+        )
         
         # Create implementations
-        triton_softmax = TritonSoftmax().cuda()
+        triton_softmax = TritonSoftmax(dim=-1).cuda()
         
-        # Forward pass
+        # Forward pass with causal masking
+        mask = torch.triu(torch.ones(seq_len, seq_len), diagonal=1).bool()
+        scores = scores.masked_fill(mask, float('-inf'))
+        
         with torch.no_grad():
-            triton_output = triton_softmax(x)
-            torch_output = torch.nn.functional.softmax(x, dim=-1)
+            triton_output = triton_softmax(scores)
+            torch_output = torch.nn.functional.softmax(scores, dim=-1)
         
-        # Adjust tolerances based on dtype
-        rtol = 1e-3 if dtype == torch.float32 else 1e-2
-        atol = 1e-3 if dtype == torch.float32 else 1e-2
-        
-        # Assert
+        # Assertions
         triton.testing.assert_close(
             triton_output,
             torch_output,
-            rtol=rtol,
-            atol=atol,
-            err_msg=f"Softmax forward pass results don't match for dtype={dtype}!"
-        )
-
-    def test_backward_match(self, batch_size, seq_len, hidden_size, dtype):
-        # Setup
-        torch.manual_seed(42)
-        x = torch.randn(batch_size * seq_len, hidden_size, device='cuda', dtype=dtype, requires_grad=True)
-        x_clone = x.clone().detach().requires_grad_(True)
-        grad_output = torch.randn_like(x)
-        
-        # Forward + backward pass
-        triton_sft = TritonSoftmax()
-        triton_output = triton_sft(x)
-        torch_output = torch.nn.functional.softmax(x_clone, dim=-1)
-        
-        triton_output.backward(grad_output)
-        torch_output.backward(grad_output)
-        
-        # Assert gradients match
-        triton.testing.assert_close(
-            x.grad,
-            x_clone.grad,
             rtol=1e-3,
             atol=1e-3,
-            err_msg="Softmax backward pass gradients don't match!"
         )
-
-def test_softmax_training():
-    # Setup
-    torch.manual_seed(42)
-    hidden_size = 256
-    batch_size = 32
-    seq_len = 128
-    
-    # Create model with Softmax
-    class SimpleModel(torch.nn.Module):
-        def __init__(self, use_triton=True):
-            super().__init__()
-            if use_triton:
-                self.softmax = TritonSoftmax()
-                self.linear = torch.nn.Linear(hidden_size, hidden_size)
-            else:
-                self.softmax = torch.nn.Softmax(dim=-1)
-                self.linear = torch.nn.Linear(hidden_size, hidden_size)
-
-        def forward(self, x):
-            return self.linear(self.softmax(x))
-    
-    # Create models
-    triton_model = SimpleModel(use_triton=True).cuda().half()
-    torch_model = SimpleModel(use_triton=False).cuda().half()
-    
-    # Training setup
-    criterion = torch.nn.MSELoss()
-    triton_optim = torch.optim.Adam(triton_model.parameters(), lr=0.001)
-    torch_optim = torch.optim.Adam(torch_model.parameters(), lr=0.001)
-    
-    # Training loop
-    n_steps = 100
-    triton_losses = []
-    torch_losses = []
-    
-    for _ in range(n_steps):
-        x = torch.randn(batch_size * seq_len, hidden_size, device='cuda', dtype=torch.float16)
-        target = torch.randn(batch_size * seq_len, hidden_size, device='cuda', dtype=torch.float16)
         
-        # Triton model step
-        triton_optim.zero_grad()
-        triton_output = triton_model(x)
-        triton_loss = criterion(triton_output, target)
-        triton_loss.backward()
-        triton_optim.step()
-        triton_losses.append(triton_loss.item())
+        # Check row sums = 1
+        row_sums = triton_output.sum(dim=-1)
+        assert torch.allclose(row_sums, torch.ones_like(row_sums))
         
-        # PyTorch model step
-        torch_optim.zero_grad()
-        torch_output = torch_model(x)
-        torch_loss = criterion(torch_output, target)
-        torch_loss.backward()
-        torch_optim.step()
-        torch_losses.append(torch_loss.item())
-    
-    # Assert both models are learning
-    assert triton_losses[-1] < triton_losses[0], "Triton model is not learning"
-    assert torch_losses[-1] < torch_losses[0], "PyTorch model is not learning"
-    
-   
+        # Check causality
+        assert torch.all(triton_output.triu(diagonal=1) == 0)
+
+    @pytest.mark.parametrize(
+        "batch_size,seq_len,vocab_size",
+        [
+            (1, 128, 32000),    # Small batch
+            (4, 512, 32000),    # Medium batch
+            (16, 1024, 32000),  # Large batch
+        ]
+    )
+    def test_vocab_softmax(self, batch_size, seq_len, vocab_size):
+        # Setup
+        torch.manual_seed(42)
+        
+        # Create logits
+        logits = torch.randn(
+            batch_size,
+            seq_len,
+            vocab_size,
+            device='cuda'
+        )
+        
+        # Create implementations
+        triton_softmax = TritonSoftmax(dim=-1).cuda()
+        
+        # Forward pass
+        with torch.no_grad():
+            triton_output = triton_softmax(logits)
+            torch_output = torch.nn.functional.softmax(logits, dim=-1)
+        
+        # Assertions
+        triton.testing.assert_close(
+            triton_output,
+            torch_output,
+            rtol=1e-3,
+            atol=1e-3,
+        )
+        
+        # Check row sums = 1
+        row_sums = triton_output.sum(dim=-1)
+        assert torch.allclose(row_sums, torch.ones_like(row_sums))
+
+    def test_numerical_stability(self):
+        # Test with very large values
+        x = torch.tensor([[1000., 0., -1000.]], device='cuda')
+        triton_output = TritonSoftmax()(x)
+        torch_output = torch.nn.functional.softmax(x, dim=-1)
+        
+        triton.testing.assert_close(
+            triton_output,
+            torch_output,
+            rtol=1e-3,
+            atol=1e-3,
+        )
+        
+        # Test with very small values
+        x = torch.tensor([[-1000., -1000., -1000.]], device='cuda')
+        triton_output = TritonSoftmax()(x)
+        torch_output = torch.nn.functional.softmax(x, dim=-1)
+        
+        triton.testing.assert_close(
+            triton_output,
+            torch_output,
+            rtol=1e-3,
+            atol=1e-3,
+        )

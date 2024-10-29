@@ -131,10 +131,13 @@ class _softmax(torch.autograd.Function):
 
 triton_softmax = _softmax.apply
 
+triton_softmax = _softmax.apply
+
 class TritonSoftmax(torch.nn.Module):
-    def __init__(self, dim=-1):
+    def __init__(self, dim=-1, causal=False):
         super().__init__()
         self.dim = dim
+        self.causal = causal
         
     def forward(self, x):
-        return triton_softmax(x, self.dim)
+        return triton_softmax(x, self.causal)
