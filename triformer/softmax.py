@@ -2,7 +2,6 @@ import torch
 import torch.nn.functional as F
 import triton
 import triton.language as tl
-from utils import calc_num_warps
 @triton.jit
 def softmax_kernel_forward(
     output_ptr,
@@ -10,7 +9,7 @@ def softmax_kernel_forward(
     input_row_stride,
     output_row_stride,
     n_cols,
-    causal:bool,
+    causal,
     BLOCK_SIZE: tl.constexpr,  # Add constexpr here
     num_warps: tl.constexpr    # Add constexpr here
 ):
@@ -69,7 +68,7 @@ def softmax_kernel_backward(
 
 class SoftmaxFunction(torch.autograd.Function):
     @classmethod
-    def forward(ctx, x, causal):
+    def forward(self,ctx, x, causal):
         shape = x.shape
         x = x.view(-1, shape[-1])
         n_rows, n_cols = x.shape
@@ -95,7 +94,7 @@ class SoftmaxFunction(torch.autograd.Function):
         return y.view(*shape)
 
     @classmethod
-    def backward(ctx, grad_probs):
+    def backward(self,ctx, grad_probs):
         shape = grad_probs.shape
         probs, = ctx.saved_tensors
 
@@ -124,10 +123,11 @@ class SoftmaxFunction(torch.autograd.Function):
 
 
 class TritonSoftmax(torch.nn.Module):
-    def __init__(self, x, causal):
+    def __init__(self, causal):
         super().__init__()
         self.causal = causal
   
         
     def forward(self, x):
-        return SoftmaxFunction.apply(x=x, causal=self.causal)
+        return SoftmaxFunction.apply(x, self.causal)
+    
