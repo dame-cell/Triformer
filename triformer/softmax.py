@@ -10,7 +10,7 @@ def softmax_kernel_forward(
     input_row_stride,
     output_row_stride,
     n_cols,
-    causal,
+    causal:bool,
     BLOCK_SIZE: tl.constexpr,  # Add constexpr here
     num_warps: tl.constexpr    # Add constexpr here
 ):
@@ -124,7 +124,7 @@ class _softmax(torch.autograd.Function):
 triton_softmax = _softmax.apply
 
 class TritonSoftmax(torch.nn.Module):
-    def __init__(self, causal):
+    def __init__(self, causal:bool):
         super().__init__()
         self.causal = causal
         
