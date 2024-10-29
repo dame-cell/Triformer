@@ -21,8 +21,6 @@ from triformer import TritonLinear, TritonLayerNorm, TritonSoftmax
 ### Layer Normalization
 
 The layer normalization backwards and forward throughputs are higher than the pytorch layer normalization.
-- benchmark was done on the L40s GPU 
-- 
 | Forward | Backward |
 |---------|----------|
 | ![LayerNorm Forward Performance](triformer/images/layernorm_forward.png) | ![LayerNorm Backward Performance](triformer/images/layernorm_backward.png) |
