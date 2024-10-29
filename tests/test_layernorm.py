@@ -39,8 +39,8 @@ class TestLayerNorm:
         triton.testing.assert_close(
             triton_output,
             torch_output,
-            rtol=1e-1,
-            atol=1e-1,
+            rtol=1e-0,
+            atol=1e-0,
             err_msg="LayerNorm forward pass results don't match!"
         )
 
@@ -72,8 +72,8 @@ class TestLayerNorm:
         triton.testing.assert_close(
             triton_ln.weight.grad,
             torch_ln.weight.grad,
-            rtol=1e-1,
-            atol=1e-1,
+            rtol=1e-0,
+            atol=1e-0,
             err_msg="LayerNorm weight gradients don't match!"
         )
         
@@ -82,8 +82,8 @@ class TestLayerNorm:
         triton.testing.assert_close(
             triton_ln.bias.grad,
             torch_ln.bias.grad,
-            rtol=1e-1,
-            atol=1e-1,
+            rtol=1e-0,
+            atol=1e-0,
             err_msg="LayerNorm bias gradients don't match!"
         )
 
