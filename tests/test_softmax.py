@@ -3,16 +3,19 @@ import pytest
 from triformer import TritonSoftmax
 import triton
 
-@pytest.mark.parametrize("batch_size,seq_len,hidden_size", [
-    (1, 128, 256),
-    (8, 512, 1024),
-    (16, 256, 512),
+@pytest.mark.parametrize("batch_size,seq_len,hidden_size,dtype", [
+    (1, 128, 256, torch.float32),
+    (8, 512, 1024, torch.float32),
+    (16, 256, 512, torch.float32),
+    (1, 128, 256, torch.float16),
+    (8, 512, 1024, torch.float16),
+    (16, 256, 512, torch.float16),
 ])
 class TestSoftmax:
-    def test_forward_match(self, batch_size, seq_len, hidden_size):
+    def test_forward_match(self, batch_size, seq_len, hidden_size, dtype):
         # Setup
         torch.manual_seed(42)
-        x = torch.randn(batch_size * seq_len, hidden_size, device='cuda', dtype=torch.float16)
+        x = torch.randn(batch_size * seq_len, hidden_size, device='cuda', dtype=dtype)
         
         # Create implementations
         triton_softmax = TritonSoftmax().cuda()
@@ -22,19 +25,23 @@ class TestSoftmax:
             triton_output = triton_softmax(x)
             torch_output = torch.nn.functional.softmax(x, dim=-1)
         
+        # Adjust tolerances based on dtype
+        rtol = 1e-3 if dtype == torch.float32 else 1e-2
+        atol = 1e-3 if dtype == torch.float32 else 1e-2
+        
         # Assert
         triton.testing.assert_close(
             triton_output,
             torch_output,
-            rtol=1e-3,
-            atol=1e-3,
-            err_msg="Softmax forward pass results don't match!"
+            rtol=rtol,
+            atol=atol,
+            err_msg=f"Softmax forward pass results don't match for dtype={dtype}!"
         )
 
-    def test_backward_match(self, batch_size, seq_len, hidden_size):
+    def test_backward_match(self, batch_size, seq_len, hidden_size, dtype):
         # Setup
         torch.manual_seed(42)
-        x = torch.randn(batch_size * seq_len, hidden_size, device='cuda', dtype=torch.float16, requires_grad=True)
+        x = torch.randn(batch_size * seq_len, hidden_size, device='cuda', dtype=dtype, requires_grad=True)
         x_clone = x.clone().detach().requires_grad_(True)
         grad_output = torch.randn_like(x)
         
