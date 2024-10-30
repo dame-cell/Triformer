@@ -54,5 +54,6 @@ pytest tests/test_softmax.py
 - [x] Implement the softmax in Triton 
 - [x] add test for each and every component
 - [ ] Make the TritonLinear more flexible to either use relu or not
-- [ ] Fuse the kernels of TritonLinear to see if it speeds up the training process 
+- [ ] Fuse the kernels of TritonLinear to see if it speeds up the training process
+- [ ] Add better checkmark for precision like either float16 for mixed-precision or use float32 
 
