@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
   name = 'triformer',
   packages = find_packages(),
-  version = '2.1.4',
+  version = '2.1.5',
   license='MIT',
   description = 'Transformer components in Triton',
   long_description='This package implements transformer components in Triton.',

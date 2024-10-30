@@ -7,7 +7,7 @@ that's it nothing special .
 ### Installation 
 - First install triformer 
 ```bash
-pip install triformer==2.1.4
+pip install triformer==2.1.5
 ```
 - Then you can use the components 
 - please keep in mind that the TritonLinear is a fused with relu
@@ -21,11 +21,11 @@ The benchmarking was done on the L40s GPU
 
 ### Layer Normalization
 
-The layer normalization backwards and forward throughputs are higher than the pytorch layer normalization.
+Updated the layernorm kernel to a more redable code.
 
 | Forward | Backward | Combined |
 |---------|----------|----------|
-| ![LayerNorm Forward Performance](triformer/images/layernorm_forward.png) | ![LayerNorm Backward Performance](triformer/images/layernorm_backward.png) | ![LayerNorm Combined Performance](triformer/images/layer-norm-combined.png) |
+| ![LayerNorm Forward Performance](triformer/images/layernorm-forward.png) | ![LayerNorm Backward Performance](triformer/images/layernorm-backward.png) | ![LayerNorm Combined Performance](triformer/images/layernorm-combined.png) |
 
 
 
