@@ -35,7 +35,7 @@ def layernorm_forward(
     tl.store(mean, mean_X)
     output = (XX * inv_var) * weight_row + bias_row
     tl.store(Y + col_offsets, output, mask=mask)
-pass
+
 
 
 @triton.jit
@@ -76,7 +76,7 @@ def layernorm_backward(
 
     # Store the computed gradient for inputs back to dY
     tl.store(dY + col_offsets, dX_row, mask=mask)
-pass
+
 
 
 class Fast_Layernorm(torch.autograd.Function):
@@ -130,4 +130,13 @@ class Fast_Layernorm(torch.autograd.Function):
         )
         dX = dY.view(*shape)
         return dX, None, None, None, None
-pass
+
+class TritonLayerNorm(torch.nn.LayerNorm):
+    def forward(self, x):
+        return Fast_Layernorm.apply(
+            x,
+            self.weight,
+            self.bias,
+            self.eps
+        )
+    
