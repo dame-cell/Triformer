@@ -7,7 +7,7 @@ that's it nothing special .
 ### Installation 
 - First install triformer 
 ```bash
-pip install triformer==2.1.5
+pip install triformer
 ```
 - Then you can use the components 
 - please keep in mind that the TritonLinear is a fused with relu
