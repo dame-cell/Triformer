@@ -18,3 +18,11 @@ def calculate_settings(n):
     elif BLOCK_SIZE >=  2048: num_warps = 8
     return BLOCK_SIZE, num_warps
 pass
+
+def calc_num_warps(block_size):
+    num_warps = 4
+    if block_size >= 2048:
+        num_warps = 8
+    if block_size >= 4096:
+        num_warps = 16
+    return num_warps
