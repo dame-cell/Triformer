@@ -14,7 +14,7 @@ pip install triformer
 - As of right now the TritonLinear is very slow compared to the Pytorch Linear layer, I'm asssuming its because I divided the kernel into 3 parts and the overhead of switching between different kernels is causing the slowdown I'm still looking into it. I might fused the kernels to see if that helps. 
 
 ```python
-from triformer import TritonLinear, TritonLayerNorm, TritonSoftmax
+from triformer import  TritonLayerNorm, TritonSoftmax
 ```
 # Benchmarking 
 The benchmarking was done on the L40s GPU 
