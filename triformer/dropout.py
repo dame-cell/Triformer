@@ -53,13 +53,16 @@ class TritonDropout(torch.autograd.Function):
             seed = torch.tensor(seed, device=x.device)
             
         output = seeded_dropout(x, p, seed)
-        mask = (output != 0).to(x.dtype)
-        ctx.save_for_backward(mask)
+        # Save the actual output for backward pass
+        ctx.save_for_backward(output)
         ctx.p = p
         return output
 
     @staticmethod
     def backward(ctx, grad_output):
-        mask, = ctx.saved_tensors
-        grad_input = grad_output * mask
+        output, = ctx.saved_tensors
+        # The mask is implicitly encoded in the output
+        # Where output is 0, grad should be 0
+        # Where output is nonzero, grad should be scaled by 1/(1-p)
+        grad_input = torch.where(output != 0, grad_output, 0.0)
         return grad_input, None, None

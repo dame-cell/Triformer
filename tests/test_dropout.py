@@ -48,18 +48,21 @@ class TestDropout:
 
     def test_dropout_backward(self, batch_size, seq_len, hidden_size, p):
         # Setup
-        x = torch.ones(batch_size * seq_len, hidden_size, device='cuda', dtype=torch.float32, requires_grad=True)
+        torch.manual_seed(42)  # Add deterministic initialization
+        x = torch.randn(batch_size * seq_len, hidden_size, device='cuda', dtype=torch.float32, requires_grad=True)
+        x_clone = x.clone().detach().requires_grad_() 
         seed = torch.tensor(42, device='cuda')
         grad_output = torch.randn_like(x)
-        
-        # Forward + backward pass
         output = TritonDropout.apply(x, p, seed)
         output.backward(grad_output)
+        triton_grad = x.grad.clone()
+        torch_output = torch.nn.functional.dropout(x_clone, p=p, training=True)
+        torch_output.backward(grad_output)
+        torch_grad = x_clone.grad
         
-        # Check gradient properties
-        mask = (output != 0).float()
-        expected_grad = grad_output * mask / (1.0 - p)
-        assert torch.allclose(x.grad, expected_grad, rtol=1e-5)
+        # Compare with PyTorch's implementation
+        assert torch.allclose(triton_grad, torch_grad, rtol=1e-5, atol=1e-5), \
+            "Gradients don't match PyTorch's implementation"
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_numerical_stability():
