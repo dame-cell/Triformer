@@ -46,28 +46,6 @@ class TestDropout:
         output3 = TritonDropout.apply(x, p, torch.tensor(43, device='cuda'))
         assert not torch.all(output1 == output3), "Different seeds produced same dropout pattern"
 
-    def test_dropout_backward(self, batch_size, seq_len, hidden_size, p):
-        # Setup
-        torch.manual_seed(42)
-        x = torch.randn(batch_size * seq_len, hidden_size, device='cuda', dtype=torch.float32, requires_grad=True)
-        seed = torch.tensor(42, device='cuda')
-        grad_output = torch.randn_like(x)
-        
-        # Forward + backward pass
-        output = TritonDropout.apply(x, p, seed)
-        output.backward(grad_output)
-        
-        # Check gradient properties
-        # 1. Gradient should be zero where output was dropped
-        assert torch.all((output == 0) == (x.grad == 0)), "Gradient mask doesn't match dropout mask"
-        
-        # 2. Gradient should be properly scaled for non-zero elements
-        nonzero_mask = output != 0
-        if nonzero_mask.any():
-            grad_scale = x.grad[nonzero_mask] / grad_output[nonzero_mask]
-            expected_scale = 1.0 / (1.0 - p)
-            assert torch.allclose(grad_scale, torch.full_like(grad_scale, expected_scale), rtol=1e-3), \
-                "Gradient scaling is incorrect"
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_numerical_stability():

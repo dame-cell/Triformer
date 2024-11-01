@@ -51,7 +51,9 @@ Tried Training a simple MLP with the TritonDropout, looks like its doing good.
 -  Layernorm test has been addded, when testing the layernorm the weights and biases were not quite similar to torch but there was a bit of difference in the values.So i had to use  `rtol=1e-0`, `atol=1e-0` to pass the test.
 -  As for the softmax I actually tests on `causal=False`
   
+
 You can run the tests individually 
+before running the tests make sure to install triformer using `pip install -U triformer`
 ```bash
 pytest tests/test_layernorm.py
 pytest tests/test_softmax.py
