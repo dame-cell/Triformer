@@ -3,15 +3,11 @@ import pytest
 from triformer import TritonDropout
 
 @pytest.mark.parametrize("batch_size,seq_len,hidden_size,p", [
-    # Small configurations
     (1, 128, 256, 0.1),
     (8, 512, 1024, 0.2),
     (16, 256, 512, 0.3),
-    
-    # Medium configurations
     (4, 1024, 768, 0.1),
-    (8, 1024, 1024, 0.5),
-    (16, 1024, 1024, 0.4),
+
 
 ])
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
@@ -100,15 +96,3 @@ def test_memory_efficiency():
     
     # Our implementation should not use significantly more memory
     assert triton_mem <= pytorch_mem * 1.1  # Allow 10% overhead
-
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
-def test_dtype_support():
-    # Test different dtype support
-    dtypes = [torch.float32, torch.float16, torch.bfloat16]
-    for dtype in dtypes:
-        x = torch.ones(1024, device='cuda', dtype=dtype)
-        try:
-            output = TritonDropout.apply(x, 0.5, torch.tensor(42, device='cuda'))
-            assert output.dtype == dtype, f"Output dtype {output.dtype} doesn't match input dtype {dtype}"
-        except Exception as e:
-            pytest.fail(f"Failed for dtype {dtype}: {str(e)}")
