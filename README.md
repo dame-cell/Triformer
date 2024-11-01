@@ -70,6 +70,7 @@ pip install -U triformer
 ```bash
 pytest tests/test_layernorm.py
 pytest tests/test_softmax.py
+pytest tests/test_dropout.py
 ```
 
 ## Future Plans - To Do
