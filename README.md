@@ -53,7 +53,9 @@ Tried Training a simple MLP with the TritonDropout, looks like its doing good.
   
 
 You can run the tests individually 
-before running the tests make sure to install triformer using `pip install -U triformer`
+before running the tests make sure to install triformer using 
+
+`pip install -U triformer`
 ```bash
 pytest tests/test_layernorm.py
 pytest tests/test_softmax.py
