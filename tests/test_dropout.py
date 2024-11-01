@@ -1,7 +1,7 @@
 import torch
 import pytest
 import numpy as np
-from triformer.dropout import TritonDropout
+from triformer import TritonDropout
 
 @pytest.mark.parametrize("batch_size,seq_len,hidden_size,p", [
     # Small configurations

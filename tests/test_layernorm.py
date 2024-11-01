@@ -1,7 +1,7 @@
 import torch
 import pytest
 import triton
-from triformer.layernorm import TritonLayerNorm
+from triformer import TritonLayerNorm
 
 @pytest.mark.parametrize("batch_size,seq_len,hidden_size", [
     # Small configurations
