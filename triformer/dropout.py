@@ -2,20 +2,26 @@ import torch
 import triton
 import triton.language as tl
 
+
 @triton.jit
 def _seeded_dropout(x_ptr, output_ptr, n_elements, p, seed, BLOCK_SIZE: tl.constexpr):
     pid = tl.program_id(axis=0)
     block_start = pid * BLOCK_SIZE * 4
     
-    for i in range(4):
-        offset = block_start + BLOCK_SIZE * i + tl.arange(0, BLOCK_SIZE)
-        mask = offset < n_elements
-        x = tl.load(x_ptr + offset, mask=mask)
-        r = tl.randint(seed, offset)
+    offset = block_start + tl.arange(0, BLOCK_SIZE)
+    r0, r1, r2, r3 = tl.random.rand4x(seed, offset)
+    for i in tl.static_range(4):
+        curr_offset = offset + BLOCK_SIZE * i
+        mask = curr_offset < n_elements
+        x = tl.load(x_ptr + curr_offset, mask=mask)
+        r = tl.where(i == 0, r0, 
+            tl.where(i == 1, r1,
+                tl.where(i == 2, r2, r3)))
+        
         keep = r > p
         output = tl.where(keep, x / (1 - p), 0.0)
-        tl.store(output_ptr + offset, output, mask=mask)
-        
+        tl.store(output_ptr + curr_offset, output, mask=mask)
+
 def seeded_dropout(x, p, seed):
     output = torch.empty_like(x)
     assert x.is_contiguous()
@@ -57,4 +63,3 @@ class TritonDropout(torch.autograd.Function):
         mask, = ctx.saved_tensors
         grad_input = grad_output * mask
         return grad_input, None, None
-
