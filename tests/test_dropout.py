@@ -48,21 +48,26 @@ class TestDropout:
 
     def test_dropout_backward(self, batch_size, seq_len, hidden_size, p):
         # Setup
-        torch.manual_seed(42)  # Add deterministic initialization
+        torch.manual_seed(42)
         x = torch.randn(batch_size * seq_len, hidden_size, device='cuda', dtype=torch.float32, requires_grad=True)
-        x_clone = x.clone().detach().requires_grad_() 
         seed = torch.tensor(42, device='cuda')
         grad_output = torch.randn_like(x)
+        
+        # Forward + backward pass
         output = TritonDropout.apply(x, p, seed)
         output.backward(grad_output)
-        triton_grad = x.grad.clone()
-        torch_output = torch.nn.functional.dropout(x_clone, p=p, training=True)
-        torch_output.backward(grad_output)
-        torch_grad = x_clone.grad
         
-        # Compare with PyTorch's implementation
-        assert torch.allclose(triton_grad, torch_grad, rtol=1e-2, atol=1e-2), \
-            "Gradients don't match PyTorch's implementation"
+        # Check gradient properties
+        # 1. Gradient should be zero where output was dropped
+        assert torch.all((output == 0) == (x.grad == 0)), "Gradient mask doesn't match dropout mask"
+        
+        # 2. Gradient should be properly scaled for non-zero elements
+        nonzero_mask = output != 0
+        if nonzero_mask.any():
+            grad_scale = x.grad[nonzero_mask] / grad_output[nonzero_mask]
+            expected_scale = 1.0 / (1.0 - p)
+            assert torch.allclose(grad_scale, torch.full_like(grad_scale, expected_scale), rtol=1e-3), \
+                "Gradient scaling is incorrect"
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_numerical_stability():
