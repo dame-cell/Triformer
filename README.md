@@ -9,9 +9,10 @@ that's it nothing special .
 ```bash
 pip install triformer
 ```
-```python
-from triformer import  TritonLayerNorm, TritonSoftmax
-```
+### Usage 
+
+Coming Soon 
+
 # Benchmarking 
 The benchmarking was done on the L40s GPU 
 
