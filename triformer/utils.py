@@ -3,7 +3,6 @@ import triton.language as tl
 import torch 
 
 
-# copied from https://github.com/unslothai/unsloth/blob/main/unsloth/kernels/utils.py
 next_power_of_2 = triton.next_power_of_2
 MAX_FUSED_SIZE = 65536
 
@@ -19,10 +18,3 @@ def calculate_settings(n):
     return BLOCK_SIZE, num_warps
 pass
 
-def calc_num_warps(block_size):
-    num_warps = 4
-    if block_size >= 2048:
-        num_warps = 8
-    if block_size >= 4096:
-        num_warps = 16
-    return num_warps
