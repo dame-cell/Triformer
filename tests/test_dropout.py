@@ -48,6 +48,55 @@ class TestDropout:
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+def test_training():
+    # Set seeds for reproducibility
+    torch.manual_seed(42)
+    
+    # Create a simple dataset
+    X = torch.randn(1000, 512, device='cuda') 
+    y = torch.randn(1000, 10, device='cuda')
+    
+    # Model with our dropout
+    class SimpleModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear1 = nn.Linear(512, 1024).cuda()
+            self.linear2 = nn.Linear(1024, 10).cuda()
+            self.dropout = lambda x: TritonDropout.apply(x, 0.5, torch.randint(0, 2**31-1, (), device='cuda'))
+            
+        def forward(self, x):
+            x = self.linear1(x)
+            x = F.relu(x)
+            x = self.dropout(x)
+            x = self.linear2(x)
+            return x
+    
+    # Create model and train
+    model = SimpleModel()
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    criterion = nn.MSELoss()
+    
+    # Short training loop to verify it works
+    model.train()
+    initial_loss = None
+    final_loss = None
+    
+    for epoch in range(10):
+        optimizer.zero_grad()
+        output = model(X)
+        loss = criterion(output, y)
+        loss.backward()
+        optimizer.step()
+        
+        if epoch == 0:
+            initial_loss = loss.item()
+        if epoch == 9:
+            final_loss = loss.item()
+    
+    # Verify that loss decreased
+    assert final_loss < initial_loss, "Training failed to reduce loss"
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_numerical_stability():
     # Test numerical stability with extreme values
     x = torch.tensor([[-1e10, 0, 1e10]], device='cuda')
