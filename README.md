@@ -52,10 +52,21 @@ Tried Training a simple MLP with the TritonDropout, looks like its doing good.
 -  As for the softmax I actually tests on `causal=False`
   
 
-You can run the tests individually 
-before running the tests make sure to install triformer using 
+To run the tests 
 
-`pip install -U triformer`
+- First git clone the repo 
+```bash 
+git clone https://github.com/dame-cell/Triformer.git
+```
+- Then navigate to the Triformer/tests directory 
+```bash
+cd Triformer/tests
+```
+- Install triformer
+```bash
+pip install -U triformer
+```
+- Then run the tests 
 ```bash
 pytest tests/test_layernorm.py
 pytest tests/test_softmax.py
