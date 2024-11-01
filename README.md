@@ -9,10 +9,6 @@ that's it nothing special .
 ```bash
 pip install triformer
 ```
-- Then you can use the components 
-- please keep in mind that the TritonLinear is a fused with relu
-- As of right now the TritonLinear is very slow compared to the Pytorch Linear layer, I'm asssuming its because I divided the kernel into 3 parts and the overhead of switching between different kernels is causing the slowdown I'm still looking into it. I might fused the kernels to see if that helps. 
-
 ```python
 from triformer import  TritonLayerNorm, TritonSoftmax
 ```
