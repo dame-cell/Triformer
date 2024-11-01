@@ -10,6 +10,9 @@ def _seeded_dropout(x_ptr, output_ptr, n_elements, p, seed, BLOCK_SIZE: tl.const
     
     offset = block_start + tl.arange(0, BLOCK_SIZE)
     r0, r1, r2, r3 = tl.random.rand4x(seed, offset)
+    
+    scale = 1.0 / (1.0 - p)  # Calculate scale factor once
+    
     for i in tl.static_range(4):
         curr_offset = offset + BLOCK_SIZE * i
         mask = curr_offset < n_elements
@@ -19,7 +22,7 @@ def _seeded_dropout(x_ptr, output_ptr, n_elements, p, seed, BLOCK_SIZE: tl.const
                 tl.where(i == 2, r2, r3)))
         
         keep = r > p
-        output = tl.where(keep, x / (1 - p), 0.0)
+        output = tl.where(keep, x * scale, 0.0)  # Apply scaling here
         tl.store(output_ptr + curr_offset, output, mask=mask)
 
 def seeded_dropout(x, p, seed):
