@@ -41,7 +41,7 @@ The softmax kernel is also implemented in Triton and it is blazing fast. it was 
 ### Dropout
 The droput kernel was intresting it was a bit tricky to implement especially the backward pass, but I asked claude for some help and it was able to help me out.
 
-Tried Training a simple MLP with the TritonDropout it spked at the beginning but then it was consistent with the Pytorch Dropout.
+Tried Training a simple MLP with the TritonDropout, looks like its doing good.
 
 ![Dropout Performance](triformer/images/dropout.png)
 
