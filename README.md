@@ -18,6 +18,8 @@
 
 Triformer is a high-performance deep learning library that implements transformer components using Triton kernels for efficient CUDA acceleration. It provides optimized implementations of key operations used in transformer architectures, delivering significant performance improvements for both training and inference.
 
+It is not the best but it works :D 
+
 ## Features
 
 - 🚀 Highly optimized CUDA kernels via Triton
