@@ -7,7 +7,8 @@
   <img alt="triformer logo" src="triformer/images/triformer.png" width="50%" height="50%">
 </picture>
 
-**High-performance Transformer components accelerated with Triton CUDA kernels It is not the best but it works :D**
+**High-performance Transformer components accelerated with Triton CUDA kernels**
+**It is not the best but it works :D**
 
 [![PyPI version](https://badge.fury.io/py/triformer.svg)](https://badge.fury.io/py/triformer)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
