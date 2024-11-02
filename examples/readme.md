@@ -1,1 +1,1 @@
-Here I will provide you examples on how to use the components in the triformer package.
+Here I will provide examples on how to use the components in the triformer package.

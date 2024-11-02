@@ -22,7 +22,7 @@ def _seeded_dropout(x_ptr, output_ptr, n_elements, p, seed, BLOCK_SIZE: tl.const
                 tl.where(i == 2, r2, r3)))
         
         keep = r > p
-        output = tl.where(keep, x * scale, 0.0)  # Apply scaling here
+        output = tl.where(keep, x * scale, 0.0)  
         tl.store(output_ptr + curr_offset, output, mask=mask)
 
 def seeded_dropout(x, p, seed):
