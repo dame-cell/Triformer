@@ -75,6 +75,7 @@ pytest tests/test_dropout.py
 - [x] Implement the layernorm in Triton 
 - [x] Implement the softmax in Triton 
 - [x] Implement the dropout in Triton
+- [ ] Implement the cross entropy loss in Triton
 - [x] add test for each and every component
 - [ ] Add better checkmark for precision like either float16 for mixed-precision or use float32 
 
