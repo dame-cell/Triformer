@@ -95,6 +95,4 @@ pytest tests/test_cross_entropy.py
 - [x] Implement the softmax in Triton 
 - [x] Implement the dropout in Triton
 - [x] Implement the cross entropy loss in Triton
-- [x] add test for each and every component
-- [ ] Add better checkmark for precision like either float16 for mixed-precision or use float32 
-
+- 

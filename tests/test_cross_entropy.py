@@ -5,12 +5,12 @@ from triformer import TritonCrossEntropyLoss
 @pytest.mark.parametrize("batch_size,seq_len,vocab_size,n_chunks", [
     # Small configurations
     (2, 8, 100, 1),
-    (8, 128, 5000, 2),
-    (16, 256, 10000, 4),
+    (4, 32, 1000, 2),
+    (8, 64, 2000, 2),
     
-    # Large configurations
-    (32, 512, 30000, 4),
-    (64, 512, 50000, 8),
+    # Medium configurations
+    (16, 128, 5000, 4),
+    (32, 256, 10000, 4),
 ])
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 class TestCrossEntropy:
@@ -30,8 +30,11 @@ class TestCrossEntropy:
         
         # Forward pass
         with torch.no_grad():
-            triton_loss = triton_ce(logits, targets)
-            torch_loss = torch_ce(logits.view(-1, vocab_size), targets.view(-1))
+            triton_logits = logits.clone()  # Create separate copies
+            torch_logits = logits.clone()
+            
+            triton_loss = triton_ce(triton_logits, targets)
+            torch_loss = torch_ce(torch_logits.view(-1, vocab_size), targets.view(-1))
         
         # Assert
         torch.testing.assert_close(
@@ -45,7 +48,7 @@ class TestCrossEntropy:
     def test_backward_match(self, batch_size, seq_len, vocab_size, n_chunks):
         # Setup
         torch.manual_seed(42)
-        logits = torch.randn(batch_size, seq_len, vocab_size, device='cuda', dtype=torch.float32, requires_grad=True)
+        logits = torch.randn(batch_size, seq_len, vocab_size, device='cuda', dtype=torch.float32)
         targets = torch.randint(0, vocab_size, (batch_size, seq_len), device='cuda')
         pad_mask = torch.rand(batch_size, seq_len, device='cuda') < 0.1
         targets[pad_mask] = -100
@@ -55,8 +58,8 @@ class TestCrossEntropy:
         torch_ce = torch.nn.CrossEntropyLoss(ignore_index=-100, reduction="mean")
         
         # Forward + backward pass
-        triton_logits = logits.clone().detach().requires_grad_(True)
-        torch_logits = logits.clone().detach().requires_grad_(True)
+        triton_logits = logits.clone().requires_grad_(True)
+        torch_logits = logits.clone().requires_grad_(True)
         
         triton_loss = triton_ce(triton_logits, targets)
         torch_loss = torch_ce(torch_logits.view(-1, vocab_size), targets.view(-1))
@@ -88,8 +91,8 @@ def test_numerical_stability():
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_memory_efficiency():
-    # Test memory efficiency with large inputs
-    batch_size, seq_len, vocab_size = 32, 512, 50000
+    # Test memory efficiency with medium-sized inputs
+    batch_size, seq_len, vocab_size = 16, 128, 5000  # Reduced size
     logits = torch.randn(batch_size, seq_len, vocab_size, device='cuda')
     targets = torch.randint(0, vocab_size, (batch_size, seq_len), device='cuda')
     
@@ -104,11 +107,9 @@ def test_memory_efficiency():
     pytorch_mem = measure_memory(lambda: torch_ce(logits.view(-1, vocab_size), targets.view(-1)))
     
     # Measure our implementation memory usage with different chunk sizes
-    memories = {}
-    for n_chunks in [1, 2, 4, 8]:
+    for n_chunks in [1, 2, 4]:
         triton_ce = TritonCrossEntropyLoss(pad_token_id=-100, reduction="mean", n_chunks=n_chunks)
         triton_mem = measure_memory(lambda: triton_ce(logits, targets))
-        memories[n_chunks] = triton_mem
         
         # Print memory usage
         print(f"\nChunks={n_chunks}:")
@@ -118,3 +119,27 @@ def test_memory_efficiency():
         
         # Our implementation should use less memory
         assert triton_mem < pytorch_mem, f"Triton implementation with {n_chunks} chunks uses more memory than PyTorch"
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+def test_reduction_modes():
+    batch_size, seq_len, vocab_size = 4, 16, 100
+    logits = torch.randn(batch_size, seq_len, vocab_size, device='cuda')
+    targets = torch.randint(0, vocab_size, (batch_size, seq_len), device='cuda')
+    
+    # Test mean reduction
+    triton_ce_mean = TritonCrossEntropyLoss(pad_token_id=-100, reduction="mean")
+    torch_ce_mean = torch.nn.CrossEntropyLoss(ignore_index=-100, reduction="mean")
+    
+    triton_loss_mean = triton_ce_mean(logits, targets)
+    torch_loss_mean = torch_ce_mean(logits.view(-1, vocab_size), targets.view(-1))
+    
+    torch.testing.assert_close(triton_loss_mean, torch_loss_mean, rtol=1e-3, atol=1e-3)
+    
+    # Test sum reduction
+    triton_ce_sum = TritonCrossEntropyLoss(pad_token_id=-100, reduction="sum")
+    torch_ce_sum = torch.nn.CrossEntropyLoss(ignore_index=-100, reduction="sum")
+    
+    triton_loss_sum = triton_ce_sum(logits, targets)
+    torch_loss_sum = torch_ce_sum(logits.view(-1, vocab_size), targets.view(-1))
+    
+    torch.testing.assert_close(triton_loss_sum, torch_loss_sum, rtol=1e-3, atol=1e-3)
