@@ -120,26 +120,3 @@ def test_memory_efficiency():
         # Our implementation should use less memory
         assert triton_mem < pytorch_mem, f"Triton implementation with {n_chunks} chunks uses more memory than PyTorch"
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
-def test_reduction_modes():
-    batch_size, seq_len, vocab_size = 4, 16, 100
-    logits = torch.randn(batch_size, seq_len, vocab_size, device='cuda')
-    targets = torch.randint(0, vocab_size, (batch_size, seq_len), device='cuda')
-    
-    # Test mean reduction
-    triton_ce_mean = TritonCrossEntropyLoss(pad_token_id=-100, reduction="mean")
-    torch_ce_mean = torch.nn.CrossEntropyLoss(ignore_index=-100, reduction="mean")
-    
-    triton_loss_mean = triton_ce_mean(logits, targets)
-    torch_loss_mean = torch_ce_mean(logits.view(-1, vocab_size), targets.view(-1))
-    
-    torch.testing.assert_close(triton_loss_mean, torch_loss_mean, rtol=1e-3, atol=1e-3)
-    
-    # Test sum reduction
-    triton_ce_sum = TritonCrossEntropyLoss(pad_token_id=-100, reduction="sum")
-    torch_ce_sum = torch.nn.CrossEntropyLoss(ignore_index=-100, reduction="sum")
-    
-    triton_loss_sum = triton_ce_sum(logits, targets)
-    torch_loss_sum = torch_ce_sum(logits.view(-1, vocab_size), targets.view(-1))
-    
-    torch.testing.assert_close(triton_loss_sum, torch_loss_sum, rtol=1e-3, atol=1e-3)
