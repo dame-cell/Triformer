@@ -78,7 +78,7 @@ print((training_output != 0).float().mean().item())
 ```
 ```python
 from triformer import TritonCrossEntropyLoss
-
+import torch 
 batch_size, seq_len, vocab_size = 32, 64, 30000
 logits = torch.randn(batch_size * seq_len, vocab_size).cuda()
 targets = torch.randint(0, vocab_size, (batch_size * seq_len,)).cuda()
