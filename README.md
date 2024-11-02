@@ -169,10 +169,10 @@ pip install -U triformer
 ```
 - Then run the tests 
 ```bash
-pytest tests/test_layernorm.py
-pytest tests/test_softmax.py
-pytest tests/test_dropout.py
-pytest tests/test_cross_entropy.py
+pytest test_layernorm.py
+pytest test_softmax.py
+pytest test_dropout.py
+pytest test_cross_entropy.py
 ```
 
 ## Future Plans - To Do
