@@ -58,7 +58,7 @@ The cross entropy loss implementation in Triton achieves significant memory effi
 - Trades a small amount of compute time for memory efficiency
 - Enables processing of larger batches with limited GPU memory
 
-![CrossEntropyLoss Performance](triformer\images\memory_benchmark.png)
+![CrossEntropyLoss Performance](triformer/images/memory_benchmark.png)
  
  huge thanks to [mgmalek/efficient_cross_entropy](https://github.com/mgmalek/efficient_cross_entropy) for the reference.
 
