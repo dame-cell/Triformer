@@ -37,7 +37,6 @@ def layernorm_forward(
     tl.store(Y + col_offsets, output, mask=mask)
 
 
-
 @triton.jit
 def layernorm_backward(
     dY, dY_row_stride,
