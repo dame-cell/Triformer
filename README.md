@@ -10,9 +10,95 @@ that's it nothing special .
 pip install -U triformer
 ```
 ### Usage 
+- Using TritonLayerNorm
+```python
+import torch
+from triformer import TritonLayerNorm
 
-Coming Soon 
+# Create dummy data
+batch_size, seq_len, hidden_dim = 32, 64, 512
+x = torch.randn(batch_size, seq_len, hidden_dim).cuda()
 
+# Initialize and use LayerNorm
+layer_norm = TritonLayerNorm(hidden_dim).cuda()
+ln_output = layer_norm(x)
+
+# Print information about the tensors
+print("Input shape:", x.shape)
+print("Output shape:", ln_output.shape)
+
+
+# Print a small sample
+print("\nSample of output (first 5 values of first sequence):")
+print(ln_output[0, 0, :10].cpu().detach().numpy())
+```
+```python 
+# Softmax Example
+from triformer import TritonSoftmax
+import torch 
+batch_size, seq_len = 32, 64
+attention_scores = torch.randn(batch_size, seq_len, seq_len).cuda()
+
+# Regular softmax
+softmax = TritonSoftmax(is_causal=False).cuda()
+regular_attention = softmax(attention_scores)
+
+# Causal softmax
+causal_softmax = TritonSoftmax(is_causal=True).cuda()
+causal_attention = causal_softmax(attention_scores)
+
+print("\n=== Softmax ===")
+print("Input shape:", attention_scores.shape)
+print("Output shape:", regular_attention.shape)
+print("\nRegular softmax sample (first 5 values):")
+print(regular_attention[0, 0, :5].cpu().detach().numpy())
+print("\nCausal softmax sample (first 5 values):")
+print(causal_attention[0, 0, :5].cpu().detach().numpy())
+print("\nRow sums (should be 1.0):")
+print("Regular:", regular_attention[0, 0].sum().item())
+print("Causal:", causal_attention[0, 0].sum().item())
+```
+
+```python
+from triformer import TritonDropout
+import torch 
+batch_size, seq_len, hidden_dim = 32, 64, 512
+x = torch.ones(batch_size, seq_len, hidden_dim).cuda()  # Using ones for clearer demonstration
+
+training_output = TritonDropout.apply(x,0.5,42).cuda()
+
+
+print("\n=== Dropout ===")
+print("Input shape:", x.shape)
+print("Output shape:", training_output.shape)
+print("\nSample output (first 10 values, showing dropout pattern):")
+print(training_output[0, 0, :10].cpu().detach().numpy())
+print("\nPercentage of non-zero values (should be ~0.5):")
+print((training_output != 0).float().mean().item())
+```
+```python
+from triformer import TritonCrossEntropyLoss
+
+batch_size, seq_len, vocab_size = 32, 64, 30000
+logits = torch.randn(batch_size * seq_len, vocab_size).cuda()
+targets = torch.randint(0, vocab_size, (batch_size * seq_len,)).cuda()
+
+criterion = TritonCrossEntropyLoss(
+    pad_token_id=0,
+    reduction='mean',
+    n_chunks=1
+).cuda()
+
+loss = criterion(logits, targets)
+
+print("\n=== Cross Entropy Loss ===")
+print("Logits shape:", logits.shape)
+print("Targets shape:", targets.shape)
+print("Loss value:", loss.item())
+print("\nSample logits (first 5 values for first item):")
+print(logits[0, :5].cpu().detach().numpy())
+print("Corresponding target:", targets[0].item())
+```
 # Benchmarking 
 The benchmarking was done on the L40s GPU 
 
@@ -91,8 +177,10 @@ pytest tests/test_cross_entropy.py
 
 ## Future Plans - To Do
 - [ ] Create a library specifically for transformers in vision and language
-- [x] Implement the layernorm in Triton 
-- [x] Implement the softmax in Triton 
-- [x] Implement the dropout in Triton
-- [x] Implement the cross entropy loss in Triton
-- 
+- [x] Core Operations:
+  - [x] LayerNorm in Triton 
+  - [x] Softmax in Triton 
+  - [x] Dropout in Triton
+  - [x] Cross Entropy Loss in Triton
+  - [ ] Feed Forward Network (fused GeLU + Linear in Triton)
+  - [ ] The complete transformer model 
