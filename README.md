@@ -7,7 +7,7 @@ that's it nothing special .
 ### Installation 
 - First install triformer 
 ```bash
-pip install triformer
+pip install -U triformer
 ```
 ### Usage 
 
