@@ -79,8 +79,12 @@ criterion = TritonCrossEntropyLoss(
     n_chunks=1
 ).cuda()
 
+
 loss = criterion(logits, targets)
 ```
+## Examples 
+You can now try out the GPT2 archtecture in the examples directory. 
+
 
 ## Performance Benchmarks
 
