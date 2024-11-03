@@ -142,7 +142,7 @@ pytest test_cross_entropy.py
   - [x] Softmax
   - [x] Dropout
   - [x] Cross Entropy Loss
-  - [] Complete Transformer Implementation
+  - [ ] Complete Transformer Implementation
 - [ ] Llama2 Transformer architecture
     - [ ] RMSNorm
     - [ ] rotary positional embedding
