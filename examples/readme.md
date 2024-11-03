@@ -1,1 +1,8 @@
-Here I will provide examples on how to use the components in the triformer package.
+## gpt2.py
+
+The `gpt2.py` file implements the GPT-2 model architecture.
+
+
+
+
+

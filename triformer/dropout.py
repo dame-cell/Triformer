@@ -69,3 +69,4 @@ class TritonDropout(torch.autograd.Function):
         # Where output is nonzero, grad should be scaled by 1/(1-p)
         grad_input = torch.where(output != 0, grad_output, 0.0)
         return grad_input, None, None
+
