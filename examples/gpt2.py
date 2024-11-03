@@ -3,6 +3,21 @@ import torch.nn as nn
 import torch.nn.functional as F
 from triformer import TritonLayerNorm, TritonSoftmax, TritonDropout
 
+if torch.cuda.is_available():
+    gpu_name = torch.cuda.get_device_name()
+    print(f"Using GPU: {gpu_name}")
+    
+    if "A100" in gpu_name or "3090" in gpu_name or "A40" in gpu_name or "A6000" in gpu_name or "A10" in gpu_name:
+        print("Detected Ampere or newer GPU. Enabling FlashAttention.")
+        torch.backends.cuda.enable_flash_sdp(True)  
+        torch.backends.cuda.enable_mem_efficient_sdp(False) 
+    else:
+        print("Non-Ampere GPU detected. Enabling Memory-Efficient Attention.")
+        torch.backends.cuda.enable_flash_sdp(False)  
+        torch.backends.cuda.enable_mem_efficient_sdp(True)  
+else:
+    print("CUDA is not available. Using default PyTorch C++ attention backend.")
+
 def create_causal_mask(seq_len, device):
     """
     Creates a causal (autoregressive) mask
@@ -129,5 +144,3 @@ class GPT2(nn.Module):
         x = self.ln_f(x)
         x = self.lm_head(x)
         return x
-      
-      
