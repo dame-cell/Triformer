@@ -138,7 +138,6 @@ pytest test_cross_entropy.py
   - [x] Softmax
   - [x] Dropout
   - [x] Cross Entropy Loss
-  - [ ] Fused FFN (GeLU + Linear)
   - [ ] Complete Transformer Implementation
 
 ## Acknowledgments
