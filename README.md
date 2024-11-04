@@ -143,9 +143,11 @@ pytest test_cross_entropy.py
   - [x] Dropout
   - [x] Cross Entropy Loss
   - [ ] Complete Transformer Implementation
+- [ ] Llama2 Transformer architecture
+    - [ ] RMSNorm
+    - [ ] rotary positional embedding
+    - [ ] maybe we have to implement our own Grouped Query Attention (GQA) not sure yet 
 
-## Acknowledgments
-Will mention.
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
