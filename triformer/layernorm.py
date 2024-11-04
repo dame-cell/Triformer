@@ -66,10 +66,8 @@ def layernorm_backward(
     inv_var = tl.load(var).to(tl.float32)
     mean    = tl.load(mean).to(tl.float32)
     normed  = (X_row - mean) * inv_var
+    
     dY_weight = dY_row * weight_row
-
-    # Compute gradients with respect to inputs
-    # Applying the chain rule for backpropagation
     dX_row = dY_weight - tl.sum(dY_weight, axis=0) / n_cols - normed * tl.sum(dY_weight * normed, axis=0) / n_cols
     dX_row = dX_row * inv_var
 
