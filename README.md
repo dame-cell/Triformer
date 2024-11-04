@@ -146,7 +146,6 @@ pytest test_cross_entropy.py
 - [ ] Llama2 Transformer architecture
     - [ ] RMSNorm
     - [ ] rotary positional embedding
-    - [ ] swiglu
     - [ ] maybe we have to implement our own Grouped Query Attention (GQA) not sure yet 
 
 ## License
