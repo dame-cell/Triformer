@@ -136,7 +136,7 @@ pytest test_cross_entropy.py
 
 ## Roadmap
 
-- [ ] Vision and Language Transformer Library
+- [ ] Only Language Transformer Library
 - [x] Core Operations:
   - [x] LayerNorm
   - [x] Softmax
