@@ -1,6 +1,6 @@
 import torch
 import pytest
-from triformer import TritonCrossEntropyLoss
+from triformer.cross_entropy import TritonCrossEntropyLoss
 
 @pytest.mark.parametrize("batch_size,seq_len,vocab_size,n_chunks", [
     # Small configurations
