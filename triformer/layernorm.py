@@ -22,7 +22,6 @@ def layernorm_forward(
     var += row_idx
     mean += row_idx
 
-
     X_row = tl.load(X + col_offsets, mask=mask, other=0).to(tl.float32)
     weight_row = tl.load(weight + col_offsets, mask=mask, other=0).to(tl.float32)
     bias_row = tl.load(bias + col_offsets, mask=mask, other=0).to(tl.float32)
@@ -36,15 +35,12 @@ def layernorm_forward(
     output = (XX * inv_var) * weight_row + bias_row
     tl.store(Y + col_offsets, output, mask=mask)
 
-
 @triton.jit
-def layernorm_backward(
+def layernorm_backward_verbose(
     dY, dY_row_stride,
-    X,   X_row_stride,
-    weight,
-    bias,
-    var,
-    mean,
+    X, X_row_stride,
+    gamma, beta,
+    var, mean,
     n_cols, eps,
     BLOCK_SIZE: tl.constexpr
 ):
@@ -53,28 +49,49 @@ def layernorm_backward(
     mask = col_offsets < n_cols
 
     dY += row_idx * dY_row_stride
-    X  += row_idx * X_row_stride
+    X += row_idx * X_row_stride
     var += row_idx
     mean += row_idx
 
+    # Load data
+    dout = tl.load(dY + col_offsets, mask=mask, other=0).to(tl.float32)
+    x = tl.load(X + col_offsets, mask=mask, other=0).to(tl.float32)
+    gamma_row = tl.load(gamma + col_offsets, mask=mask, other=0).to(tl.float32)
+    beta_row = tl.load(beta + col_offsets, mask=mask, other=0).to(tl.float32)
 
-    dY_row = tl.load(dY + col_offsets, mask=mask, other=0).to(tl.float32)
-    X_row  = tl.load(X + col_offsets, mask=mask, other=0).to(tl.float32)
-    weight_row  = tl.load(weight + col_offsets, mask=mask, other=0).to(tl.float32)
-    bias_row  = tl.load(bias + col_offsets, mask=mask, other=0).to(tl.float32)
+    mean_val = tl.load(mean).to(tl.float32)
+    var_val = tl.load(var).to(tl.float32)
+    std_dev = tl.math.sqrt(var_val + eps)
 
-    inv_var = tl.load(var).to(tl.float32)
-    mean    = tl.load(mean).to(tl.float32)
-    normed  = (X_row - mean) * inv_var
-    dY_weight = dY_row * weight_row
+    # Forward pass components (for reference)
+    x_centered = x - mean_val
+    x_normalized = x_centered / std_dev
 
-    # Compute gradients with respect to inputs
-    # Applying the chain rule for backpropagation
-    dX_row = dY_weight - tl.sum(dY_weight, axis=0) / n_cols - normed * tl.sum(dY_weight * normed, axis=0) / n_cols
-    dX_row = dX_row * inv_var
+    # Gradients for gamma and beta
+    dgamma = tl.sum(dout * x_normalized, axis=0)
+    dbeta = tl.sum(dout, axis=0)
+
+    # Gradient w.r.t. x_normalized
+    dx_normalized = dout * gamma_row
+
+    # Gradient w.r.t. std_dev
+    dstd = tl.sum(dx_normalized * (-x_centered / (std_dev * std_dev)), axis=0)
+
+    # Gradient w.r.t. variance
+    dvar = dstd * (0.5 / std_dev)
+
+    # Gradient w.r.t. mean
+    dx_centered = dx_normalized / std_dev
+    dmean_through_var = dvar * -2 * (tl.sum(x_centered, axis=0) / n_cols)  
+    dmean = tl.sum(-dx_centered, axis=0) + dmean_through_var
+
+    # Gradient w.r.t. x
+    dx = dx_centered
+    dx += dmean / n_cols
+    dx += 2 * dvar * x_centered / n_cols
 
     # Store the computed gradient for inputs back to dY
-    tl.store(dY + col_offsets, dX_row, mask=mask)
+    tl.store(dY + col_offsets, dx, mask=mask)
 
 
 
@@ -116,7 +133,7 @@ class Fast_Layernorm(torch.autograd.Function):
         X, weight, bias, var, mean = ctx.saved_tensors
         n_rows, n_cols = dY.shape
 
-        layernorm_backward[(n_rows,)](
+        layernorm_backward_verbose[(n_rows,)](
             dY, dY.stride(0),
             X,  X.stride(0),
             weight,
@@ -129,6 +146,8 @@ class Fast_Layernorm(torch.autograd.Function):
         )
         dX = dY.view(*shape)
         return dX, None, None, None, None
+
+
 
 class TritonLayerNorm(torch.nn.LayerNorm):
     def forward(self, x):

@@ -5,12 +5,12 @@ from .utils import calculate_settings
 
 @triton.jit
 def rms_norm_forward(
-    Y, Y_row_stride,        # output tensor
-    X, X_row_stride,        # input tensor
-    W, W_row_stride,        # weight tensor
-    R, R_row_stride,        # inverse RMS storage
-    n_cols,                 # number of columns
-    eps,                    # epsilon
+    Y, Y_row_stride,        
+    X, X_row_stride,        
+    W, W_row_stride,       
+    R, R_row_stride,        
+    n_cols,                 
+    eps,                    
     BLOCK_SIZE: tl.constexpr,
     num_wraps:tl.constexpr,
 ):
@@ -26,6 +26,7 @@ def rms_norm_forward(
     W_row = tl.load(W + col_offsets, mask=mask, other=0)
 
     # Compute RMS norm using rsqrt for better performance
+    
     row_var = tl.sum(X_row * X_row, axis=0) / n_cols
     inv_rms = tl.math.rsqrt(row_var + eps)
     tl.store(R, inv_rms)
@@ -35,9 +36,6 @@ def rms_norm_forward(
     tl.store(Y + col_offsets, output, mask=mask)
 
 
-@triton.jit
-def rms_norm_backward():
-  pass 
 
 
 class FastRMSNorm(torch.autograd.Function):
