@@ -2,7 +2,7 @@ import torch
 import pytest
 import numpy as np
 from torch.nn.functional import softmax
-from triformer import TritonSoftmax
+from triformer.softmax import TritonSoftmax
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
@@ -23,7 +23,7 @@ class TestSoftmax:
             ref_output = softmax(x, dim=-1)
                 
             # Compute result using our implementation
-            triton_layer = TritonSoftmax(causal=False)
+            triton_layer = TritonSoftmax(is_causal=False)
             test_output = triton_layer(x)
             
             # Check results match within tolerance
@@ -47,7 +47,7 @@ class TestSoftmax:
             x.grad = None
             
             # Our implementation
-            triton_layer = TritonSoftmax(causal=False)
+            triton_layer = TritonSoftmax(is_causal=False)
             test_output = triton_layer(x)
             test_output.backward(grad_output)
             test_grad = x.grad
@@ -59,7 +59,7 @@ class TestSoftmax:
     def test_numerical_stability(self):
         # Test numerical stability with extreme values
         x = torch.tensor([[-1e10, 0, 1e10]], device='cuda')
-        triton_layer = TritonSoftmax(causal=False)
+        triton_layer = TritonSoftmax(is_causal=False)
         output = triton_layer(x)
         
         # Check that we don't have any NaN or inf values
@@ -84,7 +84,7 @@ class TestSoftmax:
         pytorch_mem = measure_memory(lambda: softmax(x, dim=-1))
         
         # Measure our implementation memory usage
-        triton_layer = TritonSoftmax(causal=False)
+        triton_layer = TritonSoftmax(is_causal=False)
         triton_mem = measure_memory(lambda: triton_layer(x))
         
         # Our implementation should not use significantly more memory
