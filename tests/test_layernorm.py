@@ -20,7 +20,7 @@ class TestLayerNorm:
     def test_forward_match(self, batch_size, seq_len, hidden_size):
         # Setup
         torch.manual_seed(42)
-        x = torch.randn(batch_size * seq_len, hidden_size, device='cuda', dtype=torch.float16)
+        x = torch.randn(batch_size * seq_len, hidden_size, device='cuda', dtype=torch.float32)
         
         # Create both implementations
         triton_ln = TritonLayerNorm(hidden_size).cuda().half()
@@ -47,7 +47,7 @@ class TestLayerNorm:
     def test_backward_match(self, batch_size, seq_len, hidden_size):
         # Setup
         torch.manual_seed(42)
-        x = torch.randn(batch_size * seq_len, hidden_size, device='cuda', dtype=torch.float16, requires_grad=True)
+        x = torch.randn(batch_size * seq_len, hidden_size, device='cuda', dtype=torch.float32, requires_grad=True)
         grad_output = torch.randn_like(x)
         
         # Create both implementations
@@ -69,24 +69,24 @@ class TestLayerNorm:
         torch.testing.assert_close(
             triton_ln.weight.grad,
             torch_ln.weight.grad,
-            rtol=1e-0,
-            atol=1e-0,
+            rtol=1e-5,
+            atol=1e-5,
             msg="LayerNorm weight gradients don't match!"
         )
         
         torch.testing.assert_close(
             triton_ln.bias.grad,
             torch_ln.bias.grad,
-            rtol=1e-0,
-            atol=1e-0,
+            rtol=1e-5,
+            atol=1e-5,
             msg="LayerNorm bias gradients don't match!"
         )
 
         torch.testing.assert_close(
             x.grad,
             x.grad,
-            rtol=1e-0,
-            atol=1e-0,
+            rtol=1e-5,
+            atol=1e-5,
             msg="LayerNorm input gradients don't match!"
         )
 
