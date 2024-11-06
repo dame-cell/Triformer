@@ -149,6 +149,7 @@ class Fast_Layernorm(torch.autograd.Function):
 
 
 
+
 class TritonLayerNorm(torch.nn.LayerNorm):
     def forward(self, x):
         return Fast_Layernorm.apply(
