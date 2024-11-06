@@ -20,7 +20,7 @@ class TestLayerNorm:
     def test_forward_match(self, batch_size, seq_len, hidden_size):
         # Setup
         torch.manual_seed(42)
-        x = torch.randn(batch_size * seq_len, hidden_size, device='cuda', dtype=torch.float32)
+        x = torch.randn(batch_size * seq_len, hidden_size, device='cuda', dtype=torch.float16)
         
         # Create both implementations
         triton_ln = TritonLayerNorm(hidden_size).cuda().half()
@@ -47,7 +47,7 @@ class TestLayerNorm:
     def test_backward_match(self, batch_size, seq_len, hidden_size):
         # Setup
         torch.manual_seed(42)
-        x = torch.randn(batch_size * seq_len, hidden_size, device='cuda', dtype=torch.float32, requires_grad=True)
+        x = torch.randn(batch_size * seq_len, hidden_size, device='cuda', dtype=torch.float16, requires_grad=True)
         grad_output = torch.randn_like(x)
         
         # Create both implementations
