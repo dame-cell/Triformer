@@ -38,38 +38,6 @@ def rms_norm_forward(
     tl.store(Y + col_offsets, output, mask=mask)
 
 
-@triton.jit
-def rms_backward(
-    dy, dy_stride,           
-    dscale, dscale_stride,    
-    x, x_stride,              
-    scale, scale_stride,      
-    rms, rms_stride,         
-    dx, dx_stride,            
-    n_cols,                   
-    eps,                      
-    BLOCK_SIZE: tl.constexpr, 
-    num_warps: tl.constexpr  
-):
-    # Get row index and column offsets
-    row_idx = tl.program_id(0)
-    col_offsets = tl.arange(0, BLOCK_SIZE)
-    mask = col_offsets < n_cols
-
-    # Calculate pointer offsets for current row
-    dy_row_ptr = dy + row_idx * dy_stride
-    x_row_ptr = x + row_idx * x_stride
-    scale_row_ptr = scale + col_offsets
-    dx_row_ptr = dx + row_idx * dx_stride
-    rms_val = tl.load(rms + row_idx * rms_stride)
-
-    # Load values for current row
-    dy_row = tl.load(dy_row_ptr + col_offsets, mask=mask, other=0.).to(tl.float32)
-    x_row = tl.load(x_row_ptr + col_offsets, mask=mask, other=0.).to(tl.float32)
-    scale_row = tl.load(scale_row_ptr, mask=mask, other=0.).to(tl.float32)
-
-    # 1. Calculate x_normalized
-    x_normalized = x_row / rms_val
 
 @triton.jit
 def rms_backward(
