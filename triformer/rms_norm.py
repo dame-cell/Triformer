@@ -25,7 +25,7 @@ def rms_norm_forward(
     X_row = tl.load(X + col_offsets, mask=mask, other=0).to(tl.float32)
     scaler_row = tl.load(scaler + col_offsets, mask=mask, other=0)
 
-    # Compute RMS norm using rsqrt for better performance
+    
     X_scaled = X_row * X_row 
     X_mean_squared = tl.sum(X_scaled, axis=0) / n_cols
     X_mean_squred_eps = X_mean_squared + eps
