@@ -102,6 +102,12 @@ All benchmarks were conducted on NVIDIA L40s GPUs.
 |---------|----------|----------|
 | ![Softmax Forward](triformer/images/softmax-forward.png) | ![Softmax Backward](triformer/images/softmax-backward.png) | ![Softmax Combined](triformer/images/softmax-combined.png) |
 
+### RMS Normalization Performance
+
+| Forward | Backward | Combined |
+|---------|----------|----------|
+| ![RMSNorm Forward](triformer/images/rms-norm-forward.png) | ![RMSNorm Backward](triformer/images/rms-norm-backward.png) | ![RMSNorm Combined](triformer/images/rms-norm-combined.png) |
+
 ### Memory Efficiency (Cross Entropy Loss)
 
 Our cross entropy implementation achieves significant memory reduction through:
