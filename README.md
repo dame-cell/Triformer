@@ -148,10 +148,10 @@ pytest test_cross_entropy.py
   - [x] Softmax
   - [x] Dropout
   - [x] Cross Entropy Loss
-  - [ ] Complete Transformer Implementation
 - [ ] Llama2 Transformer architecture
-    - [ ] RMSNorm
-    - [ ] 
+    - [x] RMSNorm
+    - [ ] RoPE   
+    - [ ] SwiGLU
  
 
 
