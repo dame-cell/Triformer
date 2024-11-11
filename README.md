@@ -88,7 +88,7 @@ You can now try out the GPT2 archtecture in the examples directory.
 
 ## Performance Benchmarks
 
-All benchmarks were conducted on NVIDIA L40s GPUs.
+All benchmarks were conducted on NVIDIA L40s GPUs with float16.
 
 ### Layer Normalization Performance
 
@@ -107,6 +107,13 @@ All benchmarks were conducted on NVIDIA L40s GPUs.
 | Forward | Backward | Combined |
 |---------|----------|----------|
 | ![RMSNorm Forward](triformer/images/rms-norm-forward.png) | ![RMSNorm Backward](triformer/images/rms-norm-backward.png) | ![RMSNorm Combined](triformer/images/rms-norm-combined.png) |
+
+### SwiGLU Performance 
+
+| Forward | Backward | Combined |
+|---------|----------|----------|
+| ![RMSNorm Forward](triformer/images/swiglu-forward.png) | ![RMSNorm Backward](triformer/images/swiglu-backward.png) | ![RMSNorm Combined](triformer/images/swiglu-combined.png) |
+
 
 ### Memory Efficiency (Cross Entropy Loss)
 
@@ -151,10 +158,8 @@ pytest test_cross_entropy.py
 - [ ] Llama2 Transformer architecture
     - [x] RMSNorm
     - [ ] RoPE   
-    - [ ] SwiGLU
+    - [x] SwiGLU (still working on a better and more efficient)
  
 
 
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+## Lilicensed under the MIT License - see the [LICENSE](LICENSE) file for details.
