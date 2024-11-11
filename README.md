@@ -162,4 +162,6 @@ pytest test_cross_entropy.py
  
 
 
-## Lilicensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## License 
+license is under the MIT License - see the [LICENSE](LICENSE) file for details.
