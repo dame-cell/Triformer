@@ -1,7 +1,7 @@
 import torch
 import pytest
 import triton
-from triformer.layernorm import TritonLayerNorm
+from triformer import TritonLayerNorm
 
 @pytest.mark.parametrize("batch_size,seq_len,hidden_size", [
     # Small configurations
@@ -65,7 +65,7 @@ class TestLayerNorm:
         triton_output.backward(grad_output)
         torch_output.backward(grad_output)
 
-        print("triton_ln.weight.grad,",triton_ln.weight.grad[0,:3])
+        print("triton_ln.weight.grad,",triton_ln.weight.grad)
         print("torch_ln.weight.grad,",torch_ln.weight.grad[0,:3])
         # Assert gradients match
         torch.testing.assert_close(
