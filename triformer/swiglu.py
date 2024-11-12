@@ -72,7 +72,7 @@ class FastSwigluFunction(torch.autograd.Function):
     def forward(ctx, e, g):
         e = e.contiguous()
         g = g.contiguous()
-        assert e.is_contiguous() and g.is_contiguous(), "Input tensors must be contiguous"
+        
         assert e.shape == g.shape, "Input tensors must have the same shape"
         
         shape = e.shape
