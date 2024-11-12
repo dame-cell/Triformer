@@ -74,57 +74,56 @@ def layernorm_backward(
 
 class Fast_Layernorm(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, X, weight, bias, eps):
+    def forward(ctx, X, W, b, eps):
         shape = X.shape
         dim = shape[-1]
         X = X.view(-1, dim)
         n_rows, n_cols = X.shape
         BLOCK_SIZE, num_warps = calculate_settings(n_cols)
 
-        Y  = torch.empty((n_rows, n_cols), dtype=X.dtype, device="cuda:0")
-        var  = torch.empty(n_rows, dtype=torch.float32, device="cuda:0")
-        mean = torch.empty(n_rows, dtype=torch.float32, device="cuda:0")
+        Y  = torch.empty((n_rows, n_cols), dtype = X.dtype, device = "cuda:0")
+        r  = torch.empty(n_rows, dtype = torch.float32, device = "cuda:0")
+        mu = torch.empty(n_rows, dtype = torch.float32, device = "cuda:0")
 
         layernorm_forward[(n_rows,)](
             Y, Y.stride(0),
             X, X.stride(0),
-            weight,
-            bias,
-            var,
-            mean,
+            W,
+            b,
+            r,
+            mu,
             n_cols, eps,
-            BLOCK_SIZE=BLOCK_SIZE,
-            num_warps=num_warps,
+            BLOCK_SIZE = BLOCK_SIZE,
+            num_warps  = num_warps,
         )
         ctx.eps = eps
         ctx.BLOCK_SIZE = BLOCK_SIZE
-        ctx.num_warps = num_warps
-        ctx.save_for_backward(X, weight, bias, var, mean)
+        ctx.num_warps  = num_warps
+        ctx.save_for_backward(X, W, b, r, mu)
         return Y.view(*shape)
+    pass
 
     @staticmethod
     def backward(ctx, dY):
         shape = dY.shape
         dim = shape[-1]
         dY = dY.view(-1, dim)
-        X, weight, bias, var, mean = ctx.saved_tensors
+        X, W, b, r, mu = ctx.saved_tensors
         n_rows, n_cols = dY.shape
 
         layernorm_backward[(n_rows,)](
             dY, dY.stride(0),
-            X,  X.stride(0),
-            weight,
-            bias,
-            var,
-            mean,
+            X,  X .stride(0),
+            W,
+            b,
+            r,
+            mu,
             n_cols, ctx.eps,
-            BLOCK_SIZE=ctx.BLOCK_SIZE,
-            num_warps=ctx.num_warps,
+            BLOCK_SIZE = ctx.BLOCK_SIZE,
+            num_warps  = ctx.num_warps,
         )
         dX = dY.view(*shape)
         return dX, None, None, None, None
-
-
 
 
 class TritonLayerNorm(torch.nn.LayerNorm):
