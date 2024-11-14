@@ -3,6 +3,7 @@ import triton.language as tl
 import torch 
 from .utils import calculate_settings
 
+#TO-DO make sure to include the grads of scale as well   
 @triton.jit
 def rms_norm_forward(
     Y, Y_row_stride,        
