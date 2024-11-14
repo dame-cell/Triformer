@@ -109,7 +109,7 @@ All benchmarks were conducted on NVIDIA L40s GPUs with float16.
 | ![RMSNorm Forward](triformer/images/rms-norm-forward.png) | ![RMSNorm Backward](triformer/images/rms-norm-backward.png) | ![RMSNorm Combined](triformer/images/rms-norm-combined.png) |
 
 ### SwiGLU Performance 
-
+still working on this for now 
 | Forward | Backward | Combined |
 |---------|----------|----------|
 | ![RMSNorm Forward](triformer/images/swiglu-forward.png) | ![RMSNorm Backward](triformer/images/swiglu-backward.png) | ![RMSNorm Combined](triformer/images/swiglu-combined.png) |
