@@ -1,145 +1,141 @@
-import triton 
-import triton.language as tl 
-import torch 
+import torch
+import triton
+import triton.language as tl
 from .utils import calculate_settings
 
-#TO-DO make sure to include the grads of scale as well   
 @triton.jit
-def rms_norm_forward(
-    Y, Y_row_stride,        
-    X, X_row_stride,        
-    scaler, scaler_row_stride,       
-    rms, rms_row_stride,        
-    n_cols,                 
-    eps,                    
+def rmsnorm_forward(
+    Y, Y_row_stride,
+    X, X_row_stride,
+    W,
+    r,  # stores rms value
+    n_cols, eps,
+    BLOCK_SIZE: tl.constexpr
+):
+    row_idx = tl.program_id(0)
+    col_offsets = tl.arange(0, BLOCK_SIZE)
+    mask = col_offsets < n_cols
+
+    # Compute memory locations
+    Y_ptr = Y + row_idx * Y_row_stride
+    X_ptr = X + row_idx * X_row_stride
+    r_ptr = r + row_idx
+
+    # Load data
+    X_row = tl.load(X_ptr + col_offsets, mask=mask, other=0).to(tl.float32)
+    W_row = tl.load(W + col_offsets, mask=mask, other=0).to(tl.float32)
+
+    # Calculate RMS (root mean square)
+    X_squared = X_row * X_row
+    mean_X_squared = tl.sum(X_squared, axis=0) / n_cols
+    rms = tl.math.rsqrt(mean_X_squared + eps)
+    
+    # Store RMS for backward pass
+    tl.store(r_ptr, rms)
+    
+    # Normalize and scale
+    output = X_row * rms * W_row
+    tl.store(Y_ptr + col_offsets, output, mask=mask)
+
+
+@triton.jit
+def _rms_layernorm_backward(
+    dY, dY_row_stride,
+    X,  X_row_stride,
+    W,  W_row_stride,
+    r,  r_row_stride,
+    n_cols, eps,
     BLOCK_SIZE: tl.constexpr,
-    num_warps:tl.constexpr,
 ):
     row_idx = tl.program_id(0)
     col_offsets = tl.arange(0, BLOCK_SIZE)
     mask = col_offsets < n_cols
+
+    # Load inputs
+    dY_row = tl.load(dY + row_idx * dY_row_stride + col_offsets, mask=mask, other=0).to(tl.float32)
+    X_row = tl.load(X + row_idx * X_row_stride + col_offsets, mask=mask, other=0).to(tl.float32)
+    W_row = tl.load(W + col_offsets, mask=mask, other=0).to(tl.float32)
+    rms = tl.load(r + row_idx).to(tl.float32)
+
+    # Normalized input
+    X_norm = X_row * rms
+
+    # Compute gradient
+    dX_norm = dY_row * W_row
     
-    Y += row_idx * Y_row_stride
-    X += row_idx * X_row_stride
-    rms += row_idx * rms_row_stride
-
-    X_row = tl.load(X + col_offsets, mask=mask, other=0).to(tl.float32)
-    scaler_row = tl.load(scaler + col_offsets, mask=mask, other=0)
-
+    # Compute sum terms
+    sum_dY_X = tl.sum(dX_norm * X_norm, axis=0)
     
-    X_scaled = X_row * X_row 
-    X_mean_squared = tl.sum(X_scaled, axis=0) / n_cols
-    X_mean_squred_eps = X_mean_squared + eps
-    inv_rms = tl.math.sqrt(X_mean_squred_eps)
+    # Final gradient computation
+    dX = rms * (dX_norm - X_norm * sum_dY_X / n_cols)
     
-    normed = X_row / inv_rms 
-    tl.store(rms, inv_rms)
-    normed = normed.to(scaler_row.dtype)  
-    output = normed * scaler_row
-    tl.store(Y + col_offsets, output, mask=mask)
+    # Store result
+    tl.store(dY + row_idx * dY_row_stride + col_offsets, dX, mask=mask)
 
-
-
-@triton.jit
-def rms_backward(
-    dy, dy_stride,            
-    x, x_stride,              
-    scale, scale_stride,      
-    rms, rms_stride,          
-    dx, dx_stride,            
-    n_cols,                   
-    eps,                      
-    BLOCK_SIZE: tl.constexpr, 
-    num_warps: tl.constexpr   
-):
-    # Get row index and column offsets
-    row_idx = tl.program_id(0)
-    col_offsets = tl.arange(0, BLOCK_SIZE)
-    mask = col_offsets < n_cols
-
-    # Calculate pointer offsets for current row
-    dy_row_ptr = dy + row_idx * dy_stride
-    x_row_ptr = x + row_idx * x_stride
-    scale_row_ptr = scale + col_offsets
-    dx_row_ptr = dx + row_idx * dx_stride
-    rms_val = tl.load(rms + row_idx * rms_stride)
-
-    # Load values for current row
-    dy_row = tl.load(dy_row_ptr + col_offsets, mask=mask, other=0.).to(tl.float32)
-    x_row = tl.load(x_row_ptr + col_offsets, mask=mask, other=0.).to(tl.float32)
-    scale_row = tl.load(scale_row_ptr, mask=mask, other=0.).to(tl.float32)
-
-    dx_normalized = dy_row * scale_row
-    dx_from_norm = dx_normalized / rms_val
-    dl_mean_sq_term = dx_normalized * (-x_row / (rms_val * rms_val))
-    dl_mean_squared = tl.sum(dl_mean_sq_term, axis=0) / (2 * rms_val)
-    
-    dx_row = dx_from_norm + (dl_mean_squared * (2 * x_row / n_cols))
-    tl.store(dx_row_ptr + col_offsets, dx_row, mask=mask)
-  
-    
-    
-class FastRMSNorm(torch.autograd.Function):
+class Fast_RMSNorm(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, X: torch.Tensor, W: torch.Tensor, eps: float):
+    def forward(ctx, X, W, eps):
         shape = X.shape
         dim = shape[-1]
-        X = X.view(-1, dim)
+        X = X.contiguous().view(-1, dim)
         n_rows, n_cols = X.shape
         
-        BLOCK_SIZE, num_warps = calculate_settings(n_cols)
+        BLOCK_SIZE , num_warps = calculate_settings(n_cols)
 
-        Y = torch.empty((n_rows, n_cols), dtype=X.dtype, device="cuda:0")
-        r = torch.empty(n_rows, dtype=torch.float32, device="cuda:0")
+        Y = torch.empty_like(X)
+        r = torch.empty(n_rows, dtype=torch.float32, device=X.device)
 
-        rms_norm_forward[(n_rows,)](
+        rmsnorm_forward[(n_rows,)](
             Y, Y.stride(0),
             X, X.stride(0),
-            W, W.stride(0),
-            r, r.stride(0),
+            W,
+            r,
             n_cols, eps,
             BLOCK_SIZE=BLOCK_SIZE,
             num_warps=num_warps,
         )
-    
+        
         ctx.eps = eps
         ctx.BLOCK_SIZE = BLOCK_SIZE
         ctx.num_warps = num_warps
         ctx.save_for_backward(X, W, r)
         
         return Y.view(*shape)
+
+
     @staticmethod
-    def backward(ctx, dY: torch.Tensor):
+    def backward(ctx, dY):
+        X, W, r = ctx.saved_tensors
         shape = dY.shape
         dim = shape[-1]
-        dY = dY.view(-1, dim)
-        X, W, r = ctx.saved_tensors
+        dY = dY.contiguous().view(-1, dim)
         n_rows, n_cols = dY.shape
 
-        BLOCK_SIZE, num_warps = ctx.BLOCK_SIZE, ctx.num_warps
-
-        dX = torch.empty_like(X, device="cuda:0")
-
-        rms_backward[(n_rows,)](
-            dY, dY.stride(0),
+        dX = torch.empty_like(dY)
+        
+        _rms_layernorm_backward[(n_rows,)](
+            dX, dX.stride(0),
             X, X.stride(0),
             W, W.stride(0),
             r, r.stride(0),
-            dX, dX.stride(0),
-            n_cols,
-            ctx.eps,
-            BLOCK_SIZE=BLOCK_SIZE,
-            num_warps=num_warps
+            n_cols, ctx.eps,
+            BLOCK_SIZE=ctx.BLOCK_SIZE,
+            num_warps=ctx.num_warps,
         )
 
-        return dX.view(*shape), None, None
+        # Weight gradients
+        X_norm = X * r.view(-1, 1)
+        dW = (dY * X_norm).sum(0)
 
-class TritonRMSNorm(torch.nn.Module):
-    def __init__(self, dim, eps=1e-6):
-        super().__init__()
-        self.eps = eps
-        self.scale = torch.nn.Parameter(torch.ones(dim))
-        self.dim = dim
+        return dX.view(*shape), dW, None
 
+def fast_layernorm(rmsnorm, X):
+    W = rmsnorm.weight
+    eps = rmsnorm.variance_epsilon if hasattr(rmsnorm, "variance_epsilon") else rmsnorm.eps
+    out = Fast_RMSNorm.apply(X, W, eps)
+    return out
+
+from transformers.models.llama.modeling_llama import LlamaRMSNorm
+class TritonRMSNorm(LlamaRMSNorm):
     def forward(self, x):
-        return FastRMSNorm.apply(x, self.scale, self.eps)
+        return fast_layernorm(self, x)
