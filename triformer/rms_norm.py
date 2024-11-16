@@ -8,7 +8,7 @@ def rmsnorm_forward(
     Y, Y_row_stride,
     X, X_row_stride,
     W,
-    r,  # stores rms value
+    r, 
     n_cols, eps,
     BLOCK_SIZE: tl.constexpr
 ):
@@ -16,24 +16,17 @@ def rmsnorm_forward(
     col_offsets = tl.arange(0, BLOCK_SIZE)
     mask = col_offsets < n_cols
 
-    # Compute memory locations
     Y_ptr = Y + row_idx * Y_row_stride
     X_ptr = X + row_idx * X_row_stride
     r_ptr = r + row_idx
 
-    # Load data
     X_row = tl.load(X_ptr + col_offsets, mask=mask, other=0).to(tl.float32)
     W_row = tl.load(W + col_offsets, mask=mask, other=0).to(tl.float32)
 
-    # Calculate RMS (root mean square)
     X_squared = X_row * X_row
     mean_X_squared = tl.sum(X_squared, axis=0) / n_cols
     rms = tl.math.rsqrt(mean_X_squared + eps)
-    
-    # Store RMS for backward pass
     tl.store(r_ptr, rms)
-    
-    # Normalize and scale
     output = X_row * rms * W_row
     tl.store(Y_ptr + col_offsets, output, mask=mask)
 
@@ -62,40 +55,27 @@ def _rms_layernorm_backward(
     BLOCK_SIZE: tl.constexpr,
     NUM_WARPS: tl.constexpr,
 ):
-    # Use multiple program IDs for better parallelism
     pid = tl.program_id(0)
     num_pids = tl.num_programs(0)
     
-    # Initialize offsets
     col_offsets = tl.arange(0, BLOCK_SIZE)
     mask = col_offsets < n_cols
 
-    # Pointer arithmetic
     dY_ptr = dY + pid * dY_row_stride + col_offsets
     X_ptr = X + pid * X_row_stride + col_offsets
     dX_ptr = dX + pid * dX_row_stride + col_offsets
 
-    # Load data with vectorized loads where possible
     dY_row = tl.load(dY_ptr, mask=mask, other=0).to(tl.float32)
     X_row = tl.load(X_ptr, mask=mask, other=0).to(tl.float32)
     W_row = tl.load(W + col_offsets, mask=mask, other=0).to(tl.float32)
     rms = tl.load(r + pid).to(tl.float32)
 
-    # Fused computations
     X_norm = X_row * rms
     dY_W = dY_row * W_row
-    
-    # Use block-level reduction for better performance
     sum_dY_X = tl.sum(dY_W * X_norm, axis=0)
-    
-    # Fused final computation
     dX = rms * (dY_W - X_norm * (sum_dY_X / n_cols))
-    
-    # Compute dW with block-level reduction
     dW_row = (dY_row * X_norm)
     tl.atomic_add(dW + col_offsets, dW_row, mask=mask)
-    
-    # Store results
     tl.store(dX_ptr, dX, mask=mask)
 
 
