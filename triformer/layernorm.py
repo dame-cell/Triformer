@@ -1,5 +1,5 @@
 import triton 
-import triton.language as tl
+import triton.language as tl 
 import torch 
 from .utils import calculate_settings
 
@@ -37,6 +37,8 @@ def layernorm_forward(
     tl.store(Y + col_offsets, output, mask = mask)
 
 
+
+
 @triton.jit
 def layernorm_backward(
     dY, dY_row_stride,
@@ -70,8 +72,6 @@ def layernorm_backward(
     dX_row = dX_row * inv_var
     tl.store(dY + col_offsets, dX_row, mask = mask)
 
-
-
 class Fast_Layernorm(torch.autograd.Function):
     @staticmethod
     def forward(ctx, X, W, b, eps):
@@ -81,9 +81,9 @@ class Fast_Layernorm(torch.autograd.Function):
         n_rows, n_cols = X.shape
         BLOCK_SIZE, num_warps = calculate_settings(n_cols)
 
-        Y  = torch.empty((n_rows, n_cols), dtype = X.dtype, device = "cuda:0")
-        r  = torch.empty(n_rows, dtype = torch.float32, device = "cuda:0")
-        mu = torch.empty(n_rows, dtype = torch.float32, device = "cuda:0")
+        Y = torch.empty((n_rows, n_cols), dtype=X.dtype, device="cuda:0")
+        r = torch.empty(n_rows, dtype=torch.float32, device="cuda:0")
+        mu = torch.empty(n_rows, dtype=torch.float32, device="cuda:0")
 
         layernorm_forward[(n_rows,)](
             Y, Y.stride(0),
@@ -93,45 +93,67 @@ class Fast_Layernorm(torch.autograd.Function):
             r,
             mu,
             n_cols, eps,
-            BLOCK_SIZE = BLOCK_SIZE,
-            num_warps  = num_warps,
+            BLOCK_SIZE=BLOCK_SIZE,
+            num_warps=num_warps,
         )
         ctx.eps = eps
         ctx.BLOCK_SIZE = BLOCK_SIZE
-        ctx.num_warps  = num_warps
+        ctx.num_warps = num_warps
         ctx.save_for_backward(X, W, b, r, mu)
         return Y.view(*shape)
-    pass
 
     @staticmethod
     def backward(ctx, dY):
+        X, W, b, r, mu = ctx.saved_tensors
         shape = dY.shape
         dim = shape[-1]
         dY = dY.view(-1, dim)
-        X, W, b, r, mu = ctx.saved_tensors
         n_rows, n_cols = dY.shape
 
+        # Create output gradient tensors
+        dX = torch.empty_like(dY)
+        dW = torch.empty_like(W)
+        db = torch.empty_like(b)
+
+        # Compute normalized input (needed for weight gradient)
+        X_centered = X - mu.view(-1, 1)
+        X_norm = X_centered * r.view(-1, 1)
+        
+        # Compute gradients
+        dX_flat = dY.view(-1, dim)
+        
+        # Gradient for input
         layernorm_backward[(n_rows,)](
-            dY, dY.stride(0),
-            X,  X .stride(0),
+            dX, dX.stride(0),
+            X, X.stride(0),
             W,
             b,
             r,
             mu,
             n_cols, ctx.eps,
-            BLOCK_SIZE = ctx.BLOCK_SIZE,
-            num_warps  = ctx.num_warps,
+            BLOCK_SIZE=ctx.BLOCK_SIZE,
+            num_warps=ctx.num_warps,
         )
-        dX = dY.view(*shape)
-        return dX, None, None, None, None
+        
+        # Gradient for weight and bias
+        dW = (dY * X_norm).sum(0)
+        db = dY.sum(0)
+
+        return dX.view(*shape), dW, db, None
+
+def fast_layernorm(layernorm, X):
+    assert(layernorm.elementwise_affine is True)
+    W    = layernorm.weight
+    bias = layernorm.bias
+    eps = layernorm.variance_epsilon if \
+        hasattr(layernorm, "variance_epsilon") \
+        else layernorm.eps
+    out = Fast_Layernorm.apply(X, W, bias, eps)
+    return out
+pass
 
 
 class TritonLayerNorm(torch.nn.LayerNorm):
     def forward(self, x):
-        return Fast_Layernorm.apply(
-            x,
-            self.weight,
-            self.bias,
-            self.eps
-        )
-    
+        return fast_layernorm(self, x)
+
