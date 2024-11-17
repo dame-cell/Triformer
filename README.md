@@ -106,11 +106,7 @@ All benchmarks were conducted on NVIDIA L40s GPUs with float16.
 will be benchmarking again 
 
 ### SwiGLU Performance 
-still working on this for now 
-| Forward | Backward | Combined |
-|---------|----------|----------|
-| ![RMSNorm Forward](triformer/images/swiglu-forward.png) | ![RMSNorm Backward](triformer/images/swiglu-backward.png) | ![RMSNorm Combined](triformer/images/swiglu-combined.png) |
-
+will be benchmarking again 
 
 ### Memory Efficiency (Cross Entropy Loss)
 
