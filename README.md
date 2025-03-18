@@ -153,8 +153,14 @@ pytest test_cross_entropy.py
     - [ ] RoPE   
     - [x] SwiGLU (still working on a better and more efficient)
  
+## Awesome resources to learn triton 
+I learn triton from two sources 
+- [unsloth](https://github.com/unslothai/unsloth) , I really recommend going through their kernels and trying to understand the code because their implementations are so simple yet they work so good
+- Triton docs itself
+- A lot of help was from the GPU MODE repo [gpu-mode](https://github.com/gpu-mode/triton-index)
 
-
+And finally these videos were released after I was almsot done with this project:
+- [Youtube-playlist](https://www.youtube.com/watch?v=TUQAyCNxFe4&list=PLPefVKO3tDxOJLAmCA75uShbe1z_RNqkQ)
 
 ## License 
 license is under the MIT License - see the [LICENSE](LICENSE) file for details.
