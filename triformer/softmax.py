@@ -1,4 +1,3 @@
-# huge thanks to ludicrains for the reference https://github.com/lucidrains/triton-transformer/blob/main/triton_transformer/softmax.py
 import torch
 import torch.nn.functional as F
 import triton
